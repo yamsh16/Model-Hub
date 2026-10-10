@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Node
+node_modules/
+
+# Model files are large; keep them out of git
+*.pt
+*.pth
+*.h5
+*.onnx
+*.safetensors
+*.pkl
+*.gguf
+uploads/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

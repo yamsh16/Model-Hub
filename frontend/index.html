@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Model Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ===== Header / navigation ===== -->
+  <header class="site-header">
+    <div class="container nav">
+      <a href="#" class="logo">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
+          <path d="M12 2v7M12 15v7M2 12h7M15 12h7"/>
+        </svg>
+        Model Hub
+      </a>
+      <nav class="nav-links">
+        <a href="#how-it-works">How it works</a>
+        <a href="#report">Model report</a>
+        <a href="#chat">Chat</a>
+        <a href="#attach" class="btn btn-dark">Attach a model</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- ===== Hero: pitch + attach card ===== -->
+    <section class="hero section-grey">
+      <div class="container two-col">
+        <div>
+          <p class="eyebrow">AI / ML / LLM MODEL ANALYZER</p>
+          <h1>Attach your model. Know exactly where it stands.</h1>
+          <p class="lead">
+            Bring any trained model. Get a clear report on how much it has trained,
+            how accurate it is, and how much more training it needs.
+            Then talk to it right here.
+          </p>
+          <div class="actions">
+            <a href="#report" class="btn btn-teal">See a sample report</a>
+            <a href="#how-it-works" class="btn btn-outline">How it works</a>
+          </div>
+        </div>
+
+        <div class="card" id="attach">
+          <label class="dropzone" id="dropzone">
+            <input type="file" id="file-input" multiple hidden
+                   accept=".pt,.h5,.onnx,.safetensors,.pkl,.gguf">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M12 19V5M5 12l7-7 7 7"/><path d="M4 21h16"/>
+            </svg>
+            <strong>Drop model files here</strong>
+            <span class="mono small">.pt .h5 .onnx .safetensors .pkl .gguf</span>
+            <span class="file-list" id="file-list"></span>
+          </label>
+
+          <p class="divider-text">or connect it</p>
+
+          <form class="inline-form" id="endpoint-form">
+            <label for="endpoint">API endpoint or Hugging Face repo</label>
+            <div class="row">
+              <input type="text" id="endpoint" placeholder="https://api.example.com/v1/model">
+              <button type="submit" class="btn btn-dark">Attach</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Sample report ===== -->
+    <section class="section" id="report">
+      <div class="container">
+        <p class="eyebrow eyebrow-muted">SAMPLE REPORT</p>
+        <div class="report-head">
+          <h2>Everything about your model, in one view</h2>
+          <span class="pill mono">model-name-v1 · [MODEL TYPE]</span>
+        </div>
+
+        <div class="stats">
+          <div class="stat">
+            <p class="stat-label">Training progress</p>
+            <p class="stat-value">[00]%</p>
+            <div class="progress"><div class="progress-fill" style="width: 70%"></div></div>
+            <p class="stat-note">[N] of [N] epochs completed</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">Accuracy</p>
+            <p class="stat-value">[00.0]%</p>
+            <p class="stat-note">Validation set · gap to train: [0.0]%</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">Training still needed</p>
+            <p class="stat-value">~[N] epochs</p>
+            <p class="stat-note">Estimated before gains flatten out</p>
+          </div>
+          <div class="stat stat-dark">
+            <p class="stat-label">Readiness score</p>
+            <p class="stat-value">[00] / 100</p>
+            <p class="stat-note">Close to production-ready</p>
+          </div>
+        </div>
+
+        <div class="two-col-even">
+          <div class="panel">
+            <h3>Loss curve</h3>
+            <!-- Hand-drawn SVG chart. Later this will be generated from real data. -->
+            <svg class="chart" viewBox="0 0 500 200" role="img" aria-label="Training and validation loss over epochs">
+              <path d="M40 10 V175 H490" fill="none" class="axis"/>
+              <polyline class="line-train" fill="none"
+                points="40,15 105,68 175,102 245,122 310,138 375,150 440,157 490,162"/>
+              <polyline class="line-val" fill="none"
+                points="40,20 105,75 175,110 245,132 310,146 375,150 440,149 490,147"/>
+              <text x="45" y="198" class="axis-label">epochs</text>
+            </svg>
+            <div class="legend">
+              <span><i class="swatch swatch-train"></i>Training</span>
+              <span><i class="swatch swatch-val"></i>Validation</span>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>What to do next</h3>
+            <ul class="advice">
+              <li>Validation loss is levelling off: more epochs alone will give small gains.</li>
+              <li>Training beats validation: add data or regularization before training further.</li>
+              <li>Weakest on [CLASS / TASK]: collect more examples there.</li>
+              <li>Re-run the report after each training round to track progress.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Chat ===== -->
+    <section class="section section-grey" id="chat">
+      <div class="container two-col center">
+        <div>
+          <h2>Once attached, just talk to it</h2>
+          <p class="lead">
+            Test the model in a live chat without any extra setup. Ask questions,
+            send inputs, and compare answers against the report to see where it is
+            strong and where it needs work.
+          </p>
+        </div>
+        <div class="card">
+          <div class="messages" id="messages">
+            <div class="msg msg-user">[Your test question]</div>
+            <div class="msg msg-model">[Your model's answer appears here]</div>
+          </div>
+          <form class="row" id="chat-form">
+            <input type="text" id="chat-input" placeholder="Message your model" autocomplete="off">
+            <button type="submit" class="btn btn-teal icon-btn" aria-label="Send">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <path d="M5 12h14M13 5l7 7-7 7"/>
+              </svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== How it works ===== -->
+    <section class="section section-dark" id="how-it-works">
+      <div class="container">
+        <h2>How it works</h2>
+        <div class="steps">
+          <div>
+            <p class="step-num mono">01</p>
+            <h3>Attach</h3>
+            <p>Upload files or connect an API endpoint or repo.</p>
+          </div>
+          <div>
+            <p class="step-num mono">02</p>
+            <h3>Analyze</h3>
+            <p>Get training progress, accuracy and a readiness score.</p>
+          </div>
+          <div>
+            <p class="step-num mono">03</p>
+            <h3>Chat and improve</h3>
+            <p>Talk to the model and follow the advice on what to train next.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>
