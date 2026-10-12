@@ -27,6 +27,19 @@ frontend/
   index.html   page structure
   styles.css   all styling (colours and fonts are set at the top)
   main.js      drag-and-drop, endpoint form, chat box
+backend/
+  main.py          FastAPI app (GET /health)
+  test_main.py     pytest tests
+  requirements.txt Python dependencies
+```
+
+Run the backend (Day 2 — only a health check so far, the frontend doesn't call it yet):
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload      # http://localhost:8000 is taken by the frontend, so use --port 8001
+pytest
 ```
 
 ## Target stack
@@ -100,7 +113,7 @@ serving; monitoring/logs; per-user rate limits and quotas.
 ## Roadmap
 
 - [x] **Day 1:** static landing page (header, hero with attach card, sample report, chat, how it works)
-- [ ] Python backend (FastAPI) with a health-check route
+- [x] **Day 2:** Python backend (FastAPI) with a health-check route
 - [ ] Endpoint-connect flow: point at an API endpoint, no file upload yet
 - [ ] Accuracy/metrics computation against a user-provided test set (classification first)
 - [ ] Chat through the connected endpoint (stream replies)
@@ -169,3 +182,4 @@ security material (below), before writing any upload code.
 | Date       | What was done |
 |------------|---------------|
 | 2026-10-10 | Project created; static landing page built from the design mockup; researched prior art and wrote the full build plan (stack, analysis engine, security, roadmap) into this README |
+| 2026-10-12 | Added FastAPI backend with `GET /health`, CORS for the local frontend, and pytest tests |
