@@ -29,7 +29,8 @@ frontend/
   main.js      drag-and-drop, endpoint form, chat box
 backend/
   main.py          FastAPI app (GET /health)
-  test_main.py     pytest tests
+  endpoints.py     register / list / get / delete API endpoints (POST /endpoints probes the URL)
+  test_main.py, test_endpoints.py   pytest tests
   requirements.txt Python dependencies
 ```
 
@@ -110,21 +111,57 @@ serving; monitoring/logs; per-user rate limits and quotas.
 3. **Then:** file upload with sandboxed serving, starting with `safetensors` and GGUF LLMs.
 4. **Later:** payments, teams, report sharing.
 
-## Roadmap
+## Roadmap — 30-day schedule
 
-- [x] **Day 1:** static landing page (header, hero with attach card, sample report, chat, how it works)
-- [x] **Day 2:** Python backend (FastAPI) with a health-check route
-- [ ] Endpoint-connect flow: point at an API endpoint, no file upload yet
-- [ ] Accuracy/metrics computation against a user-provided test set (classification first)
-- [ ] Chat through the connected endpoint (stream replies)
-- [ ] Upload training logs (MLflow/W&B import or raw CSV) → real loss curve
-- [ ] "Training still needed" estimate from curve-fitting, with stated assumptions
-- [ ] Readiness score + "what to do next" generated from the real metrics
-- [ ] File upload for model weights, starting with `safetensors` / GGUF only
-- [ ] Sandboxed serving (container, no network, resource limits) before accepting `.pkl`/`.pt`
-- [ ] Auth + per-user isolation, PostgreSQL schema for users/models/reports/chat
-- [ ] Migrate frontend to React/Next.js + Tailwind once there's real data to render
-- [ ] Tests and deployment
+Fixed deadline: **Day 30 = 2026-11-08** (Day 1 = 2026-10-10). One task per day, with a
+buffer day at the end of each phase. If a day slips, absorb it in the buffer — don't move
+the end date, and don't pull work forward.
+
+**Phase 1 — MVP: connect an endpoint, get metrics, chat (Days 1–11)**
+
+- [x] Day 1 (Oct 10): static landing page
+- [x] Day 2 (Oct 12): FastAPI backend with `/health`
+- [x] Day 4 (Oct 13): endpoint-connect API — register and validate an API endpoint
+- [ ] Day 5 (Oct 14): wire the frontend connect form to the endpoint API
+- [ ] Day 6 (Oct 15): test-set upload (CSV), target-column selection, train/test leakage warning
+- [ ] Day 7 (Oct 16): classification metrics — accuracy, F1, ROC-AUC, confusion matrix
+- [ ] Day 8 (Oct 17): run the test set through the endpoint; report page shows real metrics
+- [ ] Day 9 (Oct 18): chat through the connected endpoint (non-streaming)
+- [ ] Day 10 (Oct 19): stream chat replies (SSE) and chat history in the UI
+- [ ] Day 11 (Oct 20): buffer — tests, bug fixes, MVP walkthrough
+
+**Phase 2 — training analysis (Days 12–17)**
+
+- [ ] Day 12 (Oct 21): upload training logs (raw CSV) and parse them
+- [ ] Day 13 (Oct 22): real loss-curve chart
+- [ ] Day 14 (Oct 23): MLflow / W&B import
+- [ ] Day 15 (Oct 24): "training still needed" estimate from curve-fitting
+- [ ] Day 16 (Oct 25): estimate ranges, stated assumptions, and UI
+- [ ] Day 17 (Oct 26): readiness score + "what to do next" from real metrics
+
+**Phase 3 — accounts and data (Days 18–21)**
+
+- [ ] Day 18 (Oct 27): PostgreSQL schema for users / models / reports / chat
+- [ ] Day 19 (Oct 28): sign-in / auth
+- [ ] Day 20 (Oct 29): per-user isolation + isolation tests
+- [ ] Day 21 (Oct 30): buffer — tests, bug fixes
+
+**Phase 4 — frontend migration (Days 22–24)**
+
+- [ ] Day 22 (Oct 31): Next.js + Tailwind scaffold
+- [ ] Day 23 (Nov 1): migrate landing, connect, and report pages
+- [ ] Day 24 (Nov 2): migrate chat and charts; retire the static frontend
+
+**Phase 5 — model file upload and hardening (Days 25–30)**
+
+- [ ] Day 25 (Nov 3): weight upload (`safetensors` / GGUF only) with file scanning
+- [ ] Day 26 (Nov 4): sandboxed serving — container, no network, resource limits
+- [ ] Day 27 (Nov 5): reject or sandbox `.pkl` / `.pt`; security tests
+- [ ] Day 28 (Nov 6): Docker Compose for the whole stack; end-to-end tests
+- [ ] Day 29 (Nov 7): deployment
+- [ ] Day 30 (Nov 8): final polish, docs, release
+
+Payments, teams, and report sharing are out of scope for the 30 days.
 
 ## Research & prior art
 
@@ -183,3 +220,5 @@ security material (below), before writing any upload code.
 |------------|---------------|
 | 2026-10-10 | Project created; static landing page built from the design mockup; researched prior art and wrote the full build plan (stack, analysis engine, security, roadmap) into this README |
 | 2026-10-12 | Added FastAPI backend with `GET /health`, CORS for the local frontend, and pytest tests |
+| 2026-10-13 | Added endpoint-connect API (`/endpoints`): probes an OpenAI-compatible chat URL, blocks private addresses, keeps API keys server-side; in-memory store until the DB day |
+| 2026-10-13 | Replaced the open-ended roadmap with a fixed 30-day schedule ending 2026-11-08 |
