@@ -168,6 +168,46 @@ input[type="text"]:focus { outline: 2px solid var(--teal); outline-offset: 1px; 
   font-size: 0.95rem;
   margin-bottom: 8px;
 }
+.inline-form label:not(:first-child) { margin-top: 14px; }
+.inline-form .optional { font-weight: 400; color: var(--muted); }
+.inline-form > input[type="text"],
+.inline-form > input[type="password"] {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.form-status { margin-top: 14px; font-size: 0.9rem; }
+.form-status.is-error   { color: #b3261e; }
+.form-status.is-success { color: var(--teal); }
+
+.endpoint-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.endpoint-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  background: var(--card-bg);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+}
+.endpoint-list .ep-meta { color: var(--muted); }
+.endpoint-list button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 4px 8px;
+}
+.endpoint-list button:hover { color: #b3261e; }
 
 /* ===== Report ===== */
 .report-head {

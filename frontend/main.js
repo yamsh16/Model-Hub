@@ -37,14 +37,96 @@ function showFiles(files) {
 dropzone.addEventListener("drop", (e) => showFiles(e.dataTransfer.files));
 fileInput.addEventListener("change", () => showFiles(fileInput.files));
 
-// ----- 2. Connect by endpoint / Hugging Face repo -----
-document.getElementById("endpoint-form").addEventListener("submit", (e) => {
+// ----- 2. Connect by endpoint -----
+// The backend runs separately from the static frontend (see README), so it needs its own origin.
+const API_BASE = "http://localhost:8001";
+
+const endpointForm = document.getElementById("endpoint-form");
+const endpointStatus = document.getElementById("endpoint-status");
+const endpointList = document.getElementById("endpoint-list");
+
+function setStatus(text, kind) {
+  endpointStatus.textContent = text;
+  endpointStatus.className = "form-status" + (kind ? ` is-${kind}` : "");
+}
+
+function renderEndpoints(endpoints) {
+  endpointList.innerHTML = "";
+  for (const ep of endpoints) {
+    const li = document.createElement("li");
+
+    const label = document.createElement("span");
+    label.textContent = ep.name;
+
+    const meta = document.createElement("span");
+    meta.className = "ep-meta";
+    meta.textContent = `${ep.model} · ${ep.latency_ms} ms`;
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => deleteEndpoint(ep.id));
+
+    li.append(label, meta, remove);
+    endpointList.appendChild(li);
+  }
+}
+
+async function loadEndpoints() {
+  try {
+    const res = await fetch(`${API_BASE}/endpoints`);
+    if (!res.ok) return; // backend may not be running yet; fail quietly on load
+    renderEndpoints(await res.json());
+  } catch {
+    // Backend unreachable — leave the list empty rather than block the page.
+  }
+}
+
+async function deleteEndpoint(id) {
+  try {
+    await fetch(`${API_BASE}/endpoints/${id}`, { method: "DELETE" });
+  } finally {
+    loadEndpoints();
+  }
+}
+
+endpointForm.addEventListener("submit", async (e) => {
   e.preventDefault(); // stop the form from reloading the page
-  const value = document.getElementById("endpoint").value.trim();
-  if (!value) return;
-  fileList.textContent = `Connecting to ${value}…`;
-  // TODO: send the endpoint to the backend.
+
+  const name = document.getElementById("ep-name").value.trim();
+  const url = document.getElementById("ep-url").value.trim();
+  const model = document.getElementById("ep-model").value.trim();
+  const api_key = document.getElementById("ep-key").value.trim();
+  if (!name || !url || !model) return;
+
+  const submitBtn = endpointForm.querySelector("button[type=submit]");
+  submitBtn.disabled = true;
+  setStatus("Connecting…");
+
+  try {
+    const res = await fetch(`${API_BASE}/endpoints`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, url, model, api_key: api_key || null }),
+    });
+    const body = await res.json();
+
+    if (!res.ok) {
+      setStatus(body.detail || "Could not attach that endpoint.", "error");
+      return;
+    }
+
+    setStatus(`Attached "${body.name}" (${body.latency_ms} ms).`, "success");
+    endpointForm.reset();
+    loadEndpoints();
+  } catch {
+    setStatus("Could not reach the Model Hub API. Is the backend running?", "error");
+  } finally {
+    submitBtn.disabled = false;
+  }
 });
+
+loadEndpoints();
 
 // ----- 3. Chat -----
 const messages = document.getElementById("messages");

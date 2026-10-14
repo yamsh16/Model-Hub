@@ -11,16 +11,18 @@ what this project leans on.
 
 ## Current state
 
-Day 1 is a static front end only (plain HTML/CSS/JS) built straight from the
-[design mockup](frontend/index.html) — no backend, no real data. Nothing in the report or
-chat is live yet; the plan below is the real build.
+The front end (plain HTML/CSS/JS, [design mockup](frontend/index.html)) can now attach a
+real API endpoint through the backend: fill in name/URL/model/API key, it's probed and
+registered server-side, and the attached list is live. The report and chat sections are
+still placeholders — that's Day 6+.
 
 ```bash
 cd frontend
 python -m http.server 8000
 ```
 
-Then open http://localhost:8000.
+Then open http://localhost:8000. The backend (below) must be running on port 8001 for the
+attach form to work.
 
 ```
 frontend/
@@ -34,12 +36,12 @@ backend/
   requirements.txt Python dependencies
 ```
 
-Run the backend (Day 2 — only a health check so far, the frontend doesn't call it yet):
+Run the backend:
 
 ```bash
 cd backend
 pip install -r requirements.txt
-uvicorn main:app --reload      # http://localhost:8000 is taken by the frontend, so use --port 8001
+uvicorn main:app --reload --port 8001   # :8000 is taken by the frontend
 pytest
 ```
 
@@ -122,7 +124,7 @@ the end date, and don't pull work forward.
 - [x] Day 1 (Oct 10): static landing page
 - [x] Day 2 (Oct 12): FastAPI backend with `/health`
 - [x] Day 4 (Oct 13): endpoint-connect API — register and validate an API endpoint
-- [ ] Day 5 (Oct 14): wire the frontend connect form to the endpoint API
+- [x] Day 5 (Oct 14): wire the frontend connect form to the endpoint API
 - [ ] Day 6 (Oct 15): test-set upload (CSV), target-column selection, train/test leakage warning
 - [ ] Day 7 (Oct 16): classification metrics — accuracy, F1, ROC-AUC, confusion matrix
 - [ ] Day 8 (Oct 17): run the test set through the endpoint; report page shows real metrics
@@ -222,3 +224,4 @@ security material (below), before writing any upload code.
 | 2026-10-12 | Added FastAPI backend with `GET /health`, CORS for the local frontend, and pytest tests |
 | 2026-10-13 | Added endpoint-connect API (`/endpoints`): probes an OpenAI-compatible chat URL, blocks private addresses, keeps API keys server-side; in-memory store until the DB day |
 | 2026-10-13 | Replaced the open-ended roadmap with a fixed 30-day schedule ending 2026-11-08 |
+| 2026-10-14 | Wired the frontend attach form to `POST /endpoints`: name/URL/model/API key fields, status messages, a live attached-endpoints list with remove; verified end to end against a local mock endpoint |

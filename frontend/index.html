@@ -63,12 +63,24 @@
           <p class="divider-text">or connect it</p>
 
           <form class="inline-form" id="endpoint-form">
-            <label for="endpoint">API endpoint or Hugging Face repo</label>
+            <label for="ep-name">Name</label>
+            <input type="text" id="ep-name" placeholder="my-llm" required>
+
+            <label for="ep-url">API endpoint (OpenAI-compatible chat URL)</label>
+            <input type="text" id="ep-url" placeholder="https://api.example.com/v1/chat/completions" required>
+
+            <label for="ep-model">Model</label>
+            <input type="text" id="ep-model" placeholder="gpt-x" required>
+
+            <label for="ep-key">API key <span class="optional">(optional, kept server-side only)</span></label>
             <div class="row">
-              <input type="text" id="endpoint" placeholder="https://api.example.com/v1/model">
+              <input type="password" id="ep-key" placeholder="sk-...">
               <button type="submit" class="btn btn-dark">Attach</button>
             </div>
           </form>
+
+          <p class="form-status" id="endpoint-status"></p>
+          <ul class="endpoint-list" id="endpoint-list"></ul>
         </div>
       </div>
     </section>
