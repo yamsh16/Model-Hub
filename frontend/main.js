@@ -128,6 +128,93 @@ endpointForm.addEventListener("submit", async (e) => {
 
 loadEndpoints();
 
+// ----- 2b. Test set: CSV upload, target column, leakage check -----
+const tsFile = document.getElementById("ts-file");
+const tsTargetBox = document.getElementById("ts-target-box");
+const tsTarget = document.getElementById("ts-target");
+const tsLeakBox = document.getElementById("ts-leak-box");
+const tsTrain = document.getElementById("ts-train");
+const tsStatus = document.getElementById("ts-status");
+const tsWarning = document.getElementById("ts-warning");
+
+let testsetId = null;
+
+function setTsStatus(text, kind) {
+  tsStatus.textContent = text;
+  tsStatus.className = "form-status" + (kind ? ` is-${kind}` : "");
+}
+
+async function apiJson(path, options) {
+  const res = await fetch(`${API_BASE}${path}`, options);
+  const body = await res.json();
+  if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : "Request failed.");
+  return body;
+}
+
+tsFile.addEventListener("change", async () => {
+  const file = tsFile.files[0];
+  testsetId = null;
+  tsTargetBox.hidden = tsLeakBox.hidden = true;
+  tsWarning.textContent = "";
+  if (!file) return setTsStatus("");
+
+  const form = new FormData();
+  form.append("file", file);
+  setTsStatus("Uploading…");
+  try {
+    const ts = await apiJson("/testsets", { method: "POST", body: form });
+    testsetId = ts.id;
+    tsTarget.innerHTML = "";
+    const placeholder = new Option("Choose a column…", "");
+    placeholder.disabled = placeholder.selected = true;
+    tsTarget.add(placeholder);
+    for (const c of ts.columns) tsTarget.add(new Option(`${c.name} (${c.unique} distinct)`, c.name));
+    tsTargetBox.hidden = false;
+    setTsStatus(`Loaded ${ts.rows} rows, ${ts.columns.length} columns. Pick the target column.`, "success");
+  } catch (err) {
+    setTsStatus(err instanceof TypeError ? "Could not reach the Model Hub API. Is the backend running?" : err.message, "error");
+  }
+});
+
+tsTarget.addEventListener("change", async () => {
+  tsWarning.textContent = "";
+  try {
+    const ts = await apiJson(`/testsets/${testsetId}/target`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ column: tsTarget.value }),
+    });
+    const classes = Object.entries(ts.classes).map(([k, n]) => `${k}: ${n}`).join(", ");
+    setTsStatus(`Target "${ts.target}" — ${classes}`, "success");
+    tsLeakBox.hidden = false;
+  } catch (err) {
+    tsLeakBox.hidden = true;
+    setTsStatus(err.message, "error");
+  }
+});
+
+tsTrain.addEventListener("change", async () => {
+  const file = tsTrain.files[0];
+  tsWarning.textContent = "";
+  if (!file || !testsetId) return;
+
+  const form = new FormData();
+  form.append("train_file", file);
+  try {
+    const r = await apiJson(`/testsets/${testsetId}/leakage`, { method: "POST", body: form });
+    if (r.warning) {
+      tsWarning.textContent = `⚠ ${r.warning}`;
+      tsWarning.className = "form-status is-error";
+    } else {
+      tsWarning.textContent = `No overlap between ${r.train_rows} training rows and the test set.`;
+      tsWarning.className = "form-status is-success";
+    }
+  } catch (err) {
+    tsWarning.textContent = err.message;
+    tsWarning.className = "form-status is-error";
+  }
+});
+
 // ----- 3. Chat -----
 const messages = document.getElementById("messages");
 const chatForm = document.getElementById("chat-form");

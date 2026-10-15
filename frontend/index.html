@@ -81,6 +81,25 @@
 
           <p class="form-status" id="endpoint-status"></p>
           <ul class="endpoint-list" id="endpoint-list"></ul>
+
+          <p class="divider-text">test set (CSV)</p>
+
+          <div class="inline-form">
+            <label for="ts-file">Test set CSV with a header row</label>
+            <input type="file" id="ts-file" accept=".csv">
+
+            <div id="ts-target-box" hidden>
+              <label for="ts-target">Target column (what the model predicts)</label>
+              <select id="ts-target"></select>
+            </div>
+
+            <div id="ts-leak-box" hidden>
+              <label for="ts-train">Training CSV <span class="optional">(optional, to check for train/test leakage)</span></label>
+              <input type="file" id="ts-train" accept=".csv">
+            </div>
+          </div>
+          <p class="form-status" id="ts-status"></p>
+          <p class="form-status" id="ts-warning"></p>
         </div>
       </div>
     </section>

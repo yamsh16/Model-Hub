@@ -176,6 +176,9 @@ input[type="text"]:focus { outline: 2px solid var(--teal); outline-offset: 1px; 
   margin-bottom: 0;
 }
 
+.inline-form select { width: 100%; padding: 10px 12px; font: inherit; }
+.inline-form div > label { margin-top: 14px; }
+
 .form-status { margin-top: 14px; font-size: 0.9rem; }
 .form-status.is-error   { color: #b3261e; }
 .form-status.is-success { color: var(--teal); }

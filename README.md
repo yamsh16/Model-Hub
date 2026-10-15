@@ -14,7 +14,8 @@ what this project leans on.
 The front end (plain HTML/CSS/JS, [design mockup](frontend/index.html)) can now attach a
 real API endpoint through the backend: fill in name/URL/model/API key, it's probed and
 registered server-side, and the attached list is live. The report and chat sections are
-still placeholders — that's Day 6+.
+still placeholders — that's Day 7+. A test-set CSV can be uploaded, a target column chosen, and
+an optional training CSV checked for train/test leakage (no metrics yet).
 
 ```bash
 cd frontend
@@ -32,6 +33,7 @@ frontend/
 backend/
   main.py          FastAPI app (GET /health)
   endpoints.py     register / list / get / delete API endpoints (POST /endpoints probes the URL)
+  testsets.py      CSV test-set upload, target column, train/test leakage check (POST /testsets)
   test_main.py, test_endpoints.py   pytest tests
   requirements.txt Python dependencies
 ```
@@ -125,7 +127,7 @@ the end date, and don't pull work forward.
 - [x] Day 2 (Oct 12): FastAPI backend with `/health`
 - [x] Day 4 (Oct 13): endpoint-connect API — register and validate an API endpoint
 - [x] Day 5 (Oct 14): wire the frontend connect form to the endpoint API
-- [ ] Day 6 (Oct 15): test-set upload (CSV), target-column selection, train/test leakage warning
+- [x] Day 6 (Oct 15): test-set upload (CSV), target-column selection, train/test leakage warning
 - [ ] Day 7 (Oct 16): classification metrics — accuracy, F1, ROC-AUC, confusion matrix
 - [ ] Day 8 (Oct 17): run the test set through the endpoint; report page shows real metrics
 - [ ] Day 9 (Oct 18): chat through the connected endpoint (non-streaming)
