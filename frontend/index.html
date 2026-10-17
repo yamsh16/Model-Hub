@@ -97,6 +97,14 @@
               <label for="ts-train">Training CSV <span class="optional">(optional, to check for train/test leakage)</span></label>
               <input type="file" id="ts-train" accept=".csv">
             </div>
+
+            <div id="ts-eval-box" hidden>
+              <label for="ts-endpoint">Run the test set through</label>
+              <div class="row">
+                <select id="ts-endpoint"></select>
+                <button type="button" class="btn btn-dark" id="ts-run">Evaluate</button>
+              </div>
+            </div>
           </div>
           <p class="form-status" id="ts-status"></p>
           <p class="form-status" id="ts-warning"></p>
@@ -122,8 +130,8 @@
           </div>
           <div class="stat">
             <p class="stat-label">Accuracy</p>
-            <p class="stat-value">[00.0]%</p>
-            <p class="stat-note">Validation set · gap to train: [0.0]%</p>
+            <p class="stat-value" id="stat-accuracy">[00.0]%</p>
+            <p class="stat-note" id="stat-accuracy-note">Validation set · gap to train: [0.0]%</p>
           </div>
           <div class="stat">
             <p class="stat-label">Training still needed</p>
@@ -134,6 +142,21 @@
             <p class="stat-label">Readiness score</p>
             <p class="stat-value">[00] / 100</p>
             <p class="stat-note">Close to production-ready</p>
+          </div>
+        </div>
+
+        <div class="panel" id="eval-panel" hidden>
+          <h3>Evaluation on your test set</h3>
+          <p class="stat-note" id="eval-summary"></p>
+          <div class="eval-grid">
+            <div>
+              <h4>Confusion matrix <span class="optional">(rows = true, columns = predicted)</span></h4>
+              <div class="table-wrap"><table class="data-table" id="eval-confusion"></table></div>
+            </div>
+            <div>
+              <h4>Per class</h4>
+              <div class="table-wrap"><table class="data-table" id="eval-classes"></table></div>
+            </div>
           </div>
         </div>
 

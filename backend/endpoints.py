@@ -12,6 +12,7 @@ from pydantic import BaseModel, HttpUrl
 router = APIRouter(prefix="/endpoints", tags=["endpoints"])
 
 PROBE_TIMEOUT_SECONDS = 10.0
+EVAL_TIMEOUT_SECONDS = 30.0
 
 # In-memory registry until the PostgreSQL schema lands. Keyed by endpoint id.
 _registry: dict[str, dict] = {}
@@ -80,6 +81,39 @@ def probe(url: str, model: str, api_key: str | None) -> int:
     if not r.is_success:
         raise HTTPException(400, f"Endpoint returned HTTP {r.status_code}")
     return int((time.monotonic() - start) * 1000)
+
+
+def chat_completion(ep: dict, prompt: str, max_tokens: int = 20) -> str:
+    """Send one user message to a registered endpoint and return the reply text."""
+    headers = {"Content-Type": "application/json"}
+    if ep["api_key"]:
+        headers["Authorization"] = f"Bearer {ep['api_key']}"
+    body = {
+        "model": ep["model"],
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+        "temperature": 0,
+    }
+    try:
+        r = httpx.post(
+            ep["url"],
+            json=body,
+            headers=headers,
+            timeout=EVAL_TIMEOUT_SECONDS,
+            follow_redirects=False,
+        )
+    except httpx.TimeoutException:
+        raise HTTPException(502, "Endpoint timed out")
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Could not reach endpoint: {type(e).__name__}")
+    if r.status_code in (401, 403):
+        raise HTTPException(400, "Endpoint rejected the API key")
+    if not r.is_success:
+        raise HTTPException(502, f"Endpoint returned HTTP {r.status_code}")
+    try:
+        return r.json()["choices"][0]["message"]["content"] or ""
+    except (ValueError, KeyError, IndexError, TypeError):
+        raise HTTPException(502, "Endpoint reply was not in OpenAI chat-completions format")
 
 
 def get_endpoint(endpoint_id: str) -> dict:

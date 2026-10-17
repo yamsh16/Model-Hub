@@ -136,6 +136,9 @@ const tsLeakBox = document.getElementById("ts-leak-box");
 const tsTrain = document.getElementById("ts-train");
 const tsStatus = document.getElementById("ts-status");
 const tsWarning = document.getElementById("ts-warning");
+const tsEvalBox = document.getElementById("ts-eval-box");
+const tsEndpoint = document.getElementById("ts-endpoint");
+const tsRun = document.getElementById("ts-run");
 
 let testsetId = null;
 
@@ -154,7 +157,7 @@ async function apiJson(path, options) {
 tsFile.addEventListener("change", async () => {
   const file = tsFile.files[0];
   testsetId = null;
-  tsTargetBox.hidden = tsLeakBox.hidden = true;
+  tsTargetBox.hidden = tsLeakBox.hidden = tsEvalBox.hidden = true;
   tsWarning.textContent = "";
   if (!file) return setTsStatus("");
 
@@ -187,8 +190,9 @@ tsTarget.addEventListener("change", async () => {
     const classes = Object.entries(ts.classes).map(([k, n]) => `${k}: ${n}`).join(", ");
     setTsStatus(`Target "${ts.target}" — ${classes}`, "success");
     tsLeakBox.hidden = false;
+    await fillEndpointSelect();
   } catch (err) {
-    tsLeakBox.hidden = true;
+    tsLeakBox.hidden = tsEvalBox.hidden = true;
     setTsStatus(err.message, "error");
   }
 });
@@ -212,6 +216,71 @@ tsTrain.addEventListener("change", async () => {
   } catch (err) {
     tsWarning.textContent = err.message;
     tsWarning.className = "form-status is-error";
+  }
+});
+
+// ----- 2c. Evaluate: run the test set through an endpoint and show real metrics -----
+async function fillEndpointSelect() {
+  const eps = await apiJson("/endpoints");
+  tsEndpoint.innerHTML = "";
+  for (const ep of eps) tsEndpoint.add(new Option(`${ep.name} (${ep.model})`, ep.id));
+  tsEvalBox.hidden = eps.length === 0;
+  if (eps.length === 0) setTsStatus("Attach an endpoint above to evaluate this test set.");
+}
+
+const pct = (x) => `${(x * 100).toFixed(1)}%`;
+
+function fillTable(table, header, rows) {
+  table.innerHTML = "";
+  for (const [i, cells] of [header, ...rows].entries()) {
+    const tr = table.insertRow();
+    for (const c of cells) {
+      const cell = document.createElement(i === 0 ? "th" : "td");
+      cell.textContent = c; // textContent: class labels come from user data
+      tr.appendChild(cell);
+    }
+  }
+}
+
+function renderReport(r) {
+  document.getElementById("stat-accuracy").textContent = pct(r.accuracy);
+  document.getElementById("stat-accuracy-note").textContent =
+    `Macro F1 ${r.f1_macro.toFixed(3)} · ROC-AUC ${r.roc_auc === null ? "n/a (endpoint returns labels only)" : r.roc_auc.toFixed(3)}`;
+
+  const scope = r.sampled ? `a random ${r.n} of ${r.total_rows} rows` : `all ${r.n} rows`;
+  const bad = r.unparsed ? ` ${r.unparsed} replies named no single class and were counted wrong.` : "";
+  document.getElementById("eval-summary").textContent = `Target "${r.target}", scored on ${scope}.${bad}`;
+
+  fillTable(
+    document.getElementById("eval-confusion"),
+    ["", ...r.classes],
+    r.confusion_matrix.map((row, i) => [r.classes[i], ...row])
+  );
+  fillTable(
+    document.getElementById("eval-classes"),
+    ["Class", "Precision", "Recall", "F1", "Rows"],
+    r.per_class.map((c) => [c.label, c.precision.toFixed(3), c.recall.toFixed(3), c.f1.toFixed(3), c.support])
+  );
+  document.getElementById("eval-panel").hidden = false;
+  document.getElementById("report").scrollIntoView({ behavior: "smooth" });
+}
+
+tsRun.addEventListener("click", async () => {
+  if (!testsetId || !tsEndpoint.value) return;
+  tsRun.disabled = true;
+  setTsStatus("Running the test set through the endpoint… this can take a minute.");
+  try {
+    const report = await apiJson(`/testsets/${testsetId}/evaluate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint_id: tsEndpoint.value }),
+    });
+    renderReport(report);
+    setTsStatus(`Done — accuracy ${pct(report.accuracy)}. See the report below.`, "success");
+  } catch (err) {
+    setTsStatus(err instanceof TypeError ? "Could not reach the Model Hub API. Is the backend running?" : err.message, "error");
+  } finally {
+    tsRun.disabled = false;
   }
 });
 

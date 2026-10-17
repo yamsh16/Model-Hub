@@ -13,9 +13,9 @@ what this project leans on.
 
 The front end (plain HTML/CSS/JS, [design mockup](frontend/index.html)) can now attach a
 real API endpoint through the backend: fill in name/URL/model/API key, it's probed and
-registered server-side, and the attached list is live. The report and chat sections are
-still placeholders — that's Day 8+. A test-set CSV can be uploaded, a target column chosen, and
-an optional training CSV checked for train/test leakage. The backend can score predictions (accuracy, F1, ROC-AUC, confusion matrix) via `POST /metrics`, but nothing feeds it from an endpoint yet.
+registered server-side, and the attached list is live. The chat section is
+still a placeholder — that's Day 9+. The loss curve, training-needed and readiness cards remain samples. A test-set CSV can be uploaded, a target column chosen, and
+an optional training CSV checked for train/test leakage. The backend can score predictions (accuracy, F1, ROC-AUC, confusion matrix) via `POST /metrics`. "Evaluate" runs the test set (a random sample of up to 200 rows) through an attached endpoint and fills the report with real accuracy, F1, per-class scores and a confusion matrix.
 
 ```bash
 cd frontend
@@ -35,6 +35,7 @@ backend/
   endpoints.py     register / list / get / delete API endpoints (POST /endpoints probes the URL)
   testsets.py      CSV test-set upload, target column, train/test leakage check (POST /testsets)
   metrics.py       accuracy, F1, ROC-AUC, confusion matrix from predictions (POST /metrics)
+  evaluation.py    runs a test set through an attached endpoint and scores it (POST /testsets/{id}/evaluate)
   test_main.py, test_endpoints.py   pytest tests
   requirements.txt Python dependencies
 ```
@@ -130,7 +131,7 @@ the end date, and don't pull work forward.
 - [x] Day 5 (Oct 14): wire the frontend connect form to the endpoint API
 - [x] Day 6 (Oct 15): test-set upload (CSV), target-column selection, train/test leakage warning
 - [x] Day 7 (Oct 16): classification metrics — accuracy, F1, ROC-AUC, confusion matrix
-- [ ] Day 8 (Oct 17): run the test set through the endpoint; report page shows real metrics
+- [x] Day 8 (Oct 17): run the test set through the endpoint; report page shows real metrics
 - [ ] Day 9 (Oct 18): chat through the connected endpoint (non-streaming)
 - [ ] Day 10 (Oct 19): stream chat replies (SSE) and chat history in the UI
 - [ ] Day 11 (Oct 20): buffer — tests, bug fixes, MVP walkthrough
