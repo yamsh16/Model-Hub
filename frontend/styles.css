@@ -323,3 +323,18 @@ input[type="text"]:focus { outline: 2px solid var(--teal); outline-offset: 1px; 
 .data-table th, .data-table td { padding: 6px 10px; border: 1px solid rgba(0, 0, 0, 0.12); text-align: right; }
 .data-table th:first-child, .data-table td:first-child { text-align: left; font-weight: 600; }
 #eval-panel { margin-bottom: 24px; }
+
+/* Chat header */
+.chat-head { margin-bottom: 12px; }
+.chat-head select { flex: 1; min-width: 0; padding: 10px 12px; font: inherit; }
+
+/* Training log import */
+.chart .tick-label { fill: var(--muted); font: 11px var(--font-mono); }
+.chart circle.line-train { fill: var(--teal); stroke: none; }
+.chart circle.line-val   { fill: var(--orange); stroke: none; }
+.log-import { margin-top: 16px; }
+.log-import details { margin-top: 12px; }
+.log-import summary { cursor: pointer; font-weight: 600; font-size: 0.95rem; }
+.log-import details form { margin-top: 10px; }
+.log-import details input[type="text"] { width: 100%; }
+.log-import details .row input { flex: 1; min-width: 0; }

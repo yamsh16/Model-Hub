@@ -83,37 +83,85 @@ def probe(url: str, model: str, api_key: str | None) -> int:
     return int((time.monotonic() - start) * 1000)
 
 
-def chat_completion(ep: dict, prompt: str, max_tokens: int = 20) -> str:
-    """Send one user message to a registered endpoint and return the reply text."""
+def _chat_request(ep: dict, messages: list[dict], stream: bool, max_tokens: int | None,
+                  temperature: float | None) -> tuple[dict, dict]:
     headers = {"Content-Type": "application/json"}
     if ep["api_key"]:
         headers["Authorization"] = f"Bearer {ep['api_key']}"
-    body = {
-        "model": ep["model"],
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max_tokens,
-        "temperature": 0,
-    }
+    body: dict = {"model": ep["model"], "messages": messages}
+    if max_tokens is not None:
+        body["max_tokens"] = max_tokens
+    if temperature is not None:
+        body["temperature"] = temperature
+    if stream:
+        body["stream"] = True
+    return headers, body
+
+
+def _check_status(status_code: int) -> None:
+    if status_code in (401, 403):
+        raise HTTPException(400, "Endpoint rejected the API key")
+    if not 200 <= status_code < 300:
+        raise HTTPException(502, f"Endpoint returned HTTP {status_code}")
+
+
+def chat_messages(ep: dict, messages: list[dict], max_tokens: int | None = None,
+                  temperature: float | None = None) -> str:
+    """Send a conversation to a registered endpoint and return the full reply text."""
+    headers, body = _chat_request(ep, messages, False, max_tokens, temperature)
     try:
         r = httpx.post(
-            ep["url"],
-            json=body,
-            headers=headers,
-            timeout=EVAL_TIMEOUT_SECONDS,
-            follow_redirects=False,
+            ep["url"], json=body, headers=headers,
+            timeout=EVAL_TIMEOUT_SECONDS, follow_redirects=False,
         )
     except httpx.TimeoutException:
         raise HTTPException(502, "Endpoint timed out")
     except httpx.HTTPError as e:
         raise HTTPException(502, f"Could not reach endpoint: {type(e).__name__}")
-    if r.status_code in (401, 403):
-        raise HTTPException(400, "Endpoint rejected the API key")
-    if not r.is_success:
-        raise HTTPException(502, f"Endpoint returned HTTP {r.status_code}")
+    _check_status(r.status_code)
     try:
         return r.json()["choices"][0]["message"]["content"] or ""
     except (ValueError, KeyError, IndexError, TypeError):
         raise HTTPException(502, "Endpoint reply was not in OpenAI chat-completions format")
+
+
+def chat_completion(ep: dict, prompt: str, max_tokens: int = 20) -> str:
+    """One-shot, deterministic single-message call (used by evaluation)."""
+    return chat_messages(
+        ep, [{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0
+    )
+
+
+def open_chat_stream(ep: dict, messages: list[dict]) -> httpx.Response:
+    """Open a streaming chat request; status is checked before returning so errors surface early.
+
+    The caller must close the returned response.
+    """
+    headers, body = _chat_request(ep, messages, True, None, None)
+    client = httpx.Client(timeout=httpx.Timeout(EVAL_TIMEOUT_SECONDS), follow_redirects=False)
+    try:
+        r = client.send(client.build_request("POST", ep["url"], json=body, headers=headers),
+                        stream=True)
+    except httpx.TimeoutException:
+        client.close()
+        raise HTTPException(502, "Endpoint timed out")
+    except httpx.HTTPError as e:
+        client.close()
+        raise HTTPException(502, f"Could not reach endpoint: {type(e).__name__}")
+    try:
+        _check_status(r.status_code)
+    except HTTPException:
+        r.close()
+        client.close()
+        raise
+    original_close = r.close
+
+    def close() -> None:
+        original_close()
+        client.close()
+
+    r.close = close  # type: ignore[method-assign]  # also release the client when the caller closes
+    return r
 
 
 def get_endpoint(endpoint_id: str) -> dict:

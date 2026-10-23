@@ -164,7 +164,7 @@
           <div class="panel">
             <h3>Loss curve</h3>
             <!-- Hand-drawn SVG chart. Later this will be generated from real data. -->
-            <svg class="chart" viewBox="0 0 500 200" role="img" aria-label="Training and validation loss over epochs">
+            <svg class="chart" id="loss-chart" viewBox="0 0 500 200" role="img" aria-label="Training and validation loss over epochs">
               <path d="M40 10 V175 H490" fill="none" class="axis"/>
               <polyline class="line-train" fill="none"
                 points="40,15 105,68 175,102 245,122 310,138 375,150 440,157 490,162"/>
@@ -173,9 +173,31 @@
               <text x="45" y="198" class="axis-label">epochs</text>
             </svg>
             <div class="legend">
-              <span><i class="swatch swatch-train"></i>Training</span>
-              <span><i class="swatch swatch-val"></i>Validation</span>
+              <span><i class="swatch swatch-train"></i><span id="legend-train">Training</span></span>
+              <span><i class="swatch swatch-val"></i><span id="legend-val">Validation</span></span>
             </div>
+            <p class="stat-note" id="chart-note">Sample curve. Load your own training log below.</p>
+
+            <div class="inline-form log-import">
+              <label for="log-file">Training log CSV <span class="optional">(Keras, Lightning, HF Trainer, or a W&amp;B export)</span></label>
+              <input type="file" id="log-file" accept=".csv">
+
+              <details>
+                <summary>or import from MLflow</summary>
+                <form id="mlflow-form">
+                  <label for="ml-uri">Tracking server URL</label>
+                  <input type="text" id="ml-uri" placeholder="https://mlflow.example.com" required>
+                  <label for="ml-run">Run ID</label>
+                  <input type="text" id="ml-run" required>
+                  <label for="ml-token">Token <span class="optional">(optional)</span></label>
+                  <div class="row">
+                    <input type="password" id="ml-token">
+                    <button type="submit" class="btn btn-dark">Import</button>
+                  </div>
+                </form>
+              </details>
+            </div>
+            <p class="form-status" id="log-status"></p>
           </div>
           <div class="panel">
             <h3>What to do next</h3>
@@ -202,10 +224,12 @@
           </p>
         </div>
         <div class="card">
-          <div class="messages" id="messages">
-            <div class="msg msg-user">[Your test question]</div>
-            <div class="msg msg-model">[Your model's answer appears here]</div>
+          <div class="row chat-head">
+            <select id="chat-endpoint" aria-label="Model to chat with"></select>
+            <button type="button" class="btn btn-outline" id="chat-clear">Clear</button>
           </div>
+          <div class="messages" id="messages" aria-live="polite"></div>
+          <p class="form-status" id="chat-status"></p>
           <form class="row" id="chat-form">
             <input type="text" id="chat-input" placeholder="Message your model" autocomplete="off">
             <button type="submit" class="btn btn-teal icon-btn" aria-label="Send">

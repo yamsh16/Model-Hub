@@ -76,7 +76,9 @@ async function loadEndpoints() {
   try {
     const res = await fetch(`${API_BASE}/endpoints`);
     if (!res.ok) return; // backend may not be running yet; fail quietly on load
-    renderEndpoints(await res.json());
+    const eps = await res.json();
+    renderEndpoints(eps);
+    syncChatEndpoints(eps);
   } catch {
     // Backend unreachable — leave the list empty rather than block the page.
   }
@@ -284,10 +286,176 @@ tsRun.addEventListener("click", async () => {
   }
 });
 
+// ----- 2d. Training log: CSV upload / MLflow import -> real loss curve -----
+const lossChart = document.getElementById("loss-chart");
+const logFile = document.getElementById("log-file");
+const logStatus = document.getElementById("log-status");
+const chartNote = document.getElementById("chart-note");
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgEl(name, attrs, text) {
+  const el = document.createElementNS(SVG_NS, name);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+
+const fmt = (n) => (Math.abs(n) >= 100 || Number.isInteger(n) ? String(Math.round(n)) : n.toPrecision(3));
+
+// Split a series into runs of consecutive numbers so gaps (null) break the line.
+function segments(xs, ys, px, py) {
+  const out = [];
+  let cur = [];
+  ys.forEach((y, i) => {
+    if (y === null) {
+      if (cur.length) out.push(cur);
+      cur = [];
+    } else {
+      cur.push(`${px(xs[i]).toFixed(1)},${py(y).toFixed(1)}`);
+    }
+  });
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+function renderLossChart(log) {
+  const lines = [
+    { name: log.train_loss, cls: "line-train", label: "legend-train", fallback: "Training" },
+    { name: log.val_loss, cls: "line-val", label: "legend-val", fallback: "Validation" },
+  ].filter((l) => l.name);
+  for (const l of [
+    { label: "legend-train", fallback: "Training" },
+    { label: "legend-val", fallback: "Validation" },
+  ]) {
+    const found = lines.find((x) => x.label === l.label);
+    document.getElementById(l.label).textContent = found ? found.name : `${l.fallback} (not in log)`;
+  }
+
+  lossChart.innerHTML = "";
+  if (lines.length === 0) {
+    chartNote.textContent = `No loss column found. Columns: ${Object.keys(log.series).join(", ")}`;
+    return;
+  }
+
+  const L = 52, R = 490, T = 10, B = 170; // plot box inside the 500x200 viewBox
+  const all = lines.flatMap((l) => log.series[l.name]).filter((v) => v !== null);
+  let yMin = Math.min(...all), yMax = Math.max(...all);
+  if (yMin === yMax) { yMin -= 0.5; yMax += 0.5; }
+  const xMin = Math.min(...log.x), xMax = Math.max(...log.x);
+  const px = (x) => (xMax === xMin ? (L + R) / 2 : L + ((x - xMin) / (xMax - xMin)) * (R - L));
+  const py = (y) => B - ((y - yMin) / (yMax - yMin)) * (B - T);
+
+  lossChart.append(svgEl("path", { d: `M${L} ${T} V${B} H${R}`, fill: "none", class: "axis" }));
+  lossChart.append(
+    svgEl("text", { x: 4, y: T + 8, class: "tick-label" }, fmt(yMax)),
+    svgEl("text", { x: 4, y: B, class: "tick-label" }, fmt(yMin)),
+    svgEl("text", { x: L, y: 192, class: "tick-label" }, fmt(xMin)),
+    svgEl("text", { x: R, y: 192, class: "tick-label", "text-anchor": "end" }, fmt(xMax)),
+    svgEl("text", { x: (L + R) / 2, y: 198, class: "axis-label", "text-anchor": "middle" }, log.x_name)
+  );
+  for (const l of lines) {
+    const ys = log.series[l.name];
+    for (const seg of segments(log.x, ys, px, py)) {
+      // A lone point has no line to draw, so show it as a dot.
+      if (seg.length === 1) {
+        const [cx, cy] = seg[0].split(",");
+        lossChart.append(svgEl("circle", { cx, cy, r: 3, class: l.cls + " dot" }));
+      } else {
+        lossChart.append(svgEl("polyline", { points: seg.join(" "), fill: "none", class: l.cls }));
+      }
+    }
+  }
+  lossChart.setAttribute(
+    "aria-label",
+    `Loss over ${log.x_name}: ${lines.map((l) => l.name).join(" and ")}`
+  );
+  const last = (name) => [...log.series[name]].reverse().find((v) => v !== null);
+  const summary = lines.map((l) => `${l.name} ends at ${fmt(last(l.name))}`).join(", ");
+  chartNote.textContent = `${log.filename}: ${log.x.length} points. ${summary}.`;
+}
+
+function setLogStatus(text, kind) {
+  logStatus.textContent = text;
+  logStatus.className = "form-status" + (kind ? ` is-${kind}` : "");
+}
+
+function networkMessage(err) {
+  return err instanceof TypeError ? "Could not reach the Model Hub API. Is the backend running?" : err.message;
+}
+
+logFile.addEventListener("change", async () => {
+  const file = logFile.files[0];
+  if (!file) return setLogStatus("");
+  const form = new FormData();
+  form.append("file", file);
+  setLogStatus("Reading log…");
+  try {
+    const log = await apiJson("/logs", { method: "POST", body: form });
+    renderLossChart(log);
+    setLogStatus(`Loaded ${log.x.length} ${log.x_name}s, ${Object.keys(log.series).length} metrics.`, "success");
+  } catch (err) {
+    setLogStatus(networkMessage(err), "error");
+  }
+});
+
+document.getElementById("mlflow-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector("button[type=submit]");
+  const token = document.getElementById("ml-token").value.trim();
+  btn.disabled = true;
+  setLogStatus("Importing from MLflow…");
+  try {
+    const log = await apiJson("/logs/mlflow", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tracking_uri: document.getElementById("ml-uri").value.trim(),
+        run_id: document.getElementById("ml-run").value.trim(),
+        token: token || null,
+      }),
+    });
+    renderLossChart(log);
+    document.getElementById("ml-token").value = "";
+    setLogStatus(`Imported ${Object.keys(log.series).length} metrics over ${log.x.length} steps.`, "success");
+  } catch (err) {
+    setLogStatus(networkMessage(err), "error");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // ----- 3. Chat -----
+// The server keeps no chat state; the page sends the whole conversation each turn and keeps
+// the history per endpoint in localStorage, so it survives a reload.
 const messages = document.getElementById("messages");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
+const chatEndpoint = document.getElementById("chat-endpoint");
+const chatClear = document.getElementById("chat-clear");
+const chatStatus = document.getElementById("chat-status");
+const chatSend = chatForm.querySelector("button[type=submit]");
+
+const HISTORY_KEY = "modelhub-chat-";
+let history = []; // [{role: "user" | "assistant", content}]
+let chatBusy = false;
+
+function loadHistory() {
+  try {
+    history = JSON.parse(localStorage.getItem(HISTORY_KEY + chatEndpoint.value)) || [];
+  } catch {
+    history = [];
+  }
+  messages.innerHTML = "";
+  for (const m of history) addMessage(m.content, m.role === "user" ? "user" : "model");
+}
+
+function saveHistory() {
+  try {
+    localStorage.setItem(HISTORY_KEY + chatEndpoint.value, JSON.stringify(history));
+  } catch {
+    // storage full or blocked: chat still works, it just won't survive a reload
+  }
+}
 
 function addMessage(text, who) {
   const div = document.createElement("div");
@@ -295,16 +463,105 @@ function addMessage(text, who) {
   div.textContent = text; // textContent (not innerHTML) so user input can't inject HTML
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
+  return div;
 }
 
-chatForm.addEventListener("submit", (e) => {
+function syncChatEndpoints(eps) {
+  const previous = chatEndpoint.value;
+  chatEndpoint.innerHTML = "";
+  for (const ep of eps) chatEndpoint.add(new Option(`${ep.name} (${ep.model})`, ep.id));
+  chatEndpoint.value = eps.some((ep) => ep.id === previous) ? previous : eps[0]?.id ?? "";
+  const none = eps.length === 0;
+  chatInput.disabled = chatSend.disabled = chatClear.disabled = none;
+  chatInput.placeholder = none ? "Attach a model first" : "Message your model";
+  if (none) {
+    messages.innerHTML = "";
+    history = [];
+  } else if (chatEndpoint.value !== previous) {
+    loadHistory();
+  }
+}
+
+// Read an SSE response body, calling onEvent(string) for each `data:` payload.
+async function readSse(res, onEvent) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let end;
+    while ((end = buffer.indexOf("\n\n")) !== -1) {
+      const block = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      for (const line of block.split("\n")) {
+        if (line.startsWith("data:")) onEvent(line.slice(5).trim());
+      }
+    }
+  }
+}
+
+chatEndpoint.addEventListener("change", loadHistory);
+chatClear.addEventListener("click", () => {
+  history = [];
+  saveHistory();
+  messages.innerHTML = "";
+  chatStatus.textContent = "";
+});
+
+chatForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = chatInput.value.trim();
-  if (!text) return;
+  if (!text || chatBusy || !chatEndpoint.value) return;
 
-  addMessage(text, "user");
+  chatBusy = true;
+  chatSend.disabled = true;
+  chatStatus.textContent = "";
+  chatStatus.className = "form-status";
   chatInput.value = "";
 
-  // TODO: replace this placeholder with a real call to the attached model.
-  setTimeout(() => addMessage("No model attached yet — this is a placeholder reply.", "model"), 400);
+  const endpointId = chatEndpoint.value;
+  history.push({ role: "user", content: text });
+  addMessage(text, "user");
+  const bubble = addMessage("…", "model");
+  let reply = "";
+
+  try {
+    const res = await fetch(`${API_BASE}/endpoints/${endpointId}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: history, stream: true }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(typeof body.detail === "string" ? body.detail : "The model did not answer.");
+    }
+    await readSse(res, (data) => {
+      if (data === "[DONE]") return;
+      const evt = JSON.parse(data);
+      if (evt.error) throw new Error(evt.error);
+      reply += evt.delta;
+      bubble.textContent = reply;
+      messages.scrollTop = messages.scrollHeight;
+    });
+    if (!reply) throw new Error("The model sent an empty reply.");
+    history.push({ role: "assistant", content: reply });
+  } catch (err) {
+    // Keep whatever streamed in; drop the unanswered user turn only if nothing came back.
+    if (reply) history.push({ role: "assistant", content: reply });
+    else {
+      history.pop();
+      bubble.remove();
+    }
+    chatStatus.textContent =
+      err instanceof TypeError ? "Could not reach the Model Hub API. Is the backend running?" : err.message;
+    chatStatus.className = "form-status is-error";
+  } finally {
+    // Only persist if the user didn't switch endpoints mid-reply.
+    if (chatEndpoint.value === endpointId) saveHistory();
+    chatBusy = false;
+    chatSend.disabled = !chatEndpoint.value;
+    chatInput.focus();
+  }
 });

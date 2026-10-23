@@ -11,11 +11,12 @@ what this project leans on.
 
 ## Current state
 
-The front end (plain HTML/CSS/JS, [design mockup](frontend/index.html)) can now attach a
-real API endpoint through the backend: fill in name/URL/model/API key, it's probed and
-registered server-side, and the attached list is live. The chat section is
-still a placeholder — that's Day 9+. The loss curve, training-needed and readiness cards remain samples. A test-set CSV can be uploaded, a target column chosen, and
-an optional training CSV checked for train/test leakage. The backend can score predictions (accuracy, F1, ROC-AUC, confusion matrix) via `POST /metrics`. "Evaluate" runs the test set (a random sample of up to 200 rows) through an attached endpoint and fills the report with real accuracy, F1, per-class scores and a confusion matrix.
+The MVP loop works end to end in the browser (plain HTML/CSS/JS,
+[design mockup](frontend/index.html)): attach an OpenAI-compatible endpoint, upload a test-set
+CSV and pick the target column, run it through the endpoint to get real accuracy / F1 /
+per-class scores / a confusion matrix, and chat with the model (streamed, with history kept per
+endpoint). Training logs (CSV, or an MLflow run) draw a real loss curve. The "training still
+needed" and "readiness score" cards are still samples — that's Days 15–17.
 
 ```bash
 cd frontend
@@ -29,14 +30,16 @@ attach form to work.
 frontend/
   index.html   page structure
   styles.css   all styling (colours and fonts are set at the top)
-  main.js      drag-and-drop, endpoint form, chat box
+  main.js      endpoint form, test set + evaluation, loss chart + log import, streaming chat
 backend/
   main.py          FastAPI app (GET /health)
   endpoints.py     register / list / get / delete API endpoints (POST /endpoints probes the URL)
   testsets.py      CSV test-set upload, target column, train/test leakage check (POST /testsets)
   metrics.py       accuracy, F1, ROC-AUC, confusion matrix from predictions (POST /metrics)
   evaluation.py    runs a test set through an attached endpoint and scores it (POST /testsets/{id}/evaluate)
-  test_main.py, test_endpoints.py   pytest tests
+  chat.py          chat through an endpoint, plain or streamed as SSE (POST /endpoints/{id}/chat)
+  logs.py          training-log CSV upload and MLflow import (POST /logs, POST /logs/mlflow)
+  test_*.py        pytest tests
   requirements.txt Python dependencies
 ```
 
@@ -48,6 +51,23 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8001   # :8000 is taken by the frontend
 pytest
 ```
+
+## MVP walkthrough
+
+1. Start the backend (`uvicorn main:app --port 8001`; add `ALLOW_PRIVATE_ENDPOINTS=1` to
+   attach a model on localhost, e.g. Ollama) and the frontend (`python -m http.server 8000`).
+2. **Attach:** name, OpenAI-compatible chat URL, model, optional key → it is probed and listed.
+3. **Test set:** upload a CSV, pick the target column (needs 2–50 distinct values), optionally
+   upload the training CSV to see the train/test overlap warning.
+4. **Evaluate:** choose the endpoint, press Evaluate → the report fills with real metrics.
+   Up to 200 rows are scored (a fixed random sample above that). Replies naming no single class
+   count as wrong. ROC-AUC shows n/a because chat endpoints return labels, not probabilities.
+5. **Chat:** pick the model in the chat card; replies stream in and history survives a reload.
+6. **Training log:** upload a log CSV or import an MLflow run → the loss curve is drawn from it.
+
+Known limits: all state is in server memory (restart = empty) until the Day 18 database;
+evaluation runs inside the request; Weights & Biases is supported through its CSV export
+(Run → Export), not a direct API import.
 
 ## Target stack
 
@@ -132,15 +152,15 @@ the end date, and don't pull work forward.
 - [x] Day 6 (Oct 15): test-set upload (CSV), target-column selection, train/test leakage warning
 - [x] Day 7 (Oct 16): classification metrics — accuracy, F1, ROC-AUC, confusion matrix
 - [x] Day 8 (Oct 17): run the test set through the endpoint; report page shows real metrics
-- [ ] Day 9 (Oct 18): chat through the connected endpoint (non-streaming)
-- [ ] Day 10 (Oct 19): stream chat replies (SSE) and chat history in the UI
-- [ ] Day 11 (Oct 20): buffer — tests, bug fixes, MVP walkthrough
+- [x] Day 9 (Oct 18): chat through the connected endpoint (non-streaming)
+- [x] Day 10 (Oct 19): stream chat replies (SSE) and chat history in the UI
+- [x] Day 11 (Oct 20): buffer — tests, bug fixes, MVP walkthrough
 
 **Phase 2 — training analysis (Days 12–17)**
 
-- [ ] Day 12 (Oct 21): upload training logs (raw CSV) and parse them
-- [ ] Day 13 (Oct 22): real loss-curve chart
-- [ ] Day 14 (Oct 23): MLflow / W&B import
+- [x] Day 12 (Oct 21): upload training logs (raw CSV) and parse them
+- [x] Day 13 (Oct 22): real loss-curve chart
+- [x] Day 14 (Oct 23): MLflow / W&B import (MLflow via REST; W&B via its CSV export, no direct API import yet)
 - [ ] Day 15 (Oct 24): "training still needed" estimate from curve-fitting
 - [ ] Day 16 (Oct 25): estimate ranges, stated assumptions, and UI
 - [ ] Day 17 (Oct 26): readiness score + "what to do next" from real metrics
