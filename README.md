@@ -16,7 +16,7 @@ The MVP loop works end to end in the browser (plain HTML/CSS/JS,
 CSV and pick the target column, run it through the endpoint to get real accuracy / F1 /
 per-class scores / a confusion matrix, and chat with the model (streamed, with history kept per
 endpoint). Training logs (CSV, or an MLflow run) draw a real loss curve. The "training still
-needed" and "readiness score" cards are still samples — that's Days 15–17.
+needed" card is still a sample until the estimate gets its UI (Day 16); the readiness score is Day 17.
 
 ```bash
 cd frontend
@@ -39,6 +39,7 @@ backend/
   evaluation.py    runs a test set through an attached endpoint and scores it (POST /testsets/{id}/evaluate)
   chat.py          chat through an endpoint, plain or streamed as SSE (POST /endpoints/{id}/chat)
   logs.py          training-log CSV upload and MLflow import (POST /logs, POST /logs/mlflow)
+  estimate.py      "training still needed" from curve-fitting a loss series (GET /logs/{id}/estimate)
   test_*.py        pytest tests
   requirements.txt Python dependencies
 ```
@@ -161,7 +162,7 @@ the end date, and don't pull work forward.
 - [x] Day 12 (Oct 21): upload training logs (raw CSV) and parse them
 - [x] Day 13 (Oct 22): real loss-curve chart
 - [x] Day 14 (Oct 23): MLflow / W&B import (MLflow via REST; W&B via its CSV export, no direct API import yet)
-- [ ] Day 15 (Oct 24): "training still needed" estimate from curve-fitting
+- [x] Day 15 (Oct 24): "training still needed" estimate from curve-fitting
 - [ ] Day 16 (Oct 25): estimate ranges, stated assumptions, and UI
 - [ ] Day 17 (Oct 26): readiness score + "what to do next" from real metrics
 

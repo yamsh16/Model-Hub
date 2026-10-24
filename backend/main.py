@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from chat import router as chat_router
 from endpoints import router as endpoints_router
+from estimate import router as estimate_router
 from evaluation import router as evaluation_router
 from logs import router as logs_router
 from metrics import router as metrics_router
@@ -15,6 +16,7 @@ app.include_router(metrics_router)
 app.include_router(testsets_router)
 app.include_router(evaluation_router)
 app.include_router(logs_router)
+app.include_router(estimate_router)
 
 # Allow the static frontend (python -m http.server 8000) to call the API in development.
 app.add_middleware(

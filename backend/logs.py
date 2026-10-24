@@ -164,9 +164,13 @@ def import_mlflow(body: MlflowIn):
     return _store(f"mlflow:{quote(body.run_id)}", "mlflow", "step", [float(s) for s in steps], series)
 
 
-@router.get("/{log_id}", response_model=LogOut)
-def read_log(log_id: str):
+def get_log(log_id: str) -> dict:
     log = _logs.get(log_id)
     if log is None:
         raise HTTPException(404, "Training log not found")
-    return LogOut(**log)
+    return log
+
+
+@router.get("/{log_id}", response_model=LogOut)
+def read_log(log_id: str):
+    return LogOut(**get_log(log_id))
