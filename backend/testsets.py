@@ -113,6 +113,8 @@ async def upload_testset(file: UploadFile):
         "columns": columns,
         "target": None,
         "classes": None,
+        "evaluation": None,
+        "leakage": None,
     }
     _testsets[ts["id"]] = ts
     return _out(ts)
@@ -143,6 +145,7 @@ def set_target(testset_id: str, body: TargetIn):
         )
     ts["target"] = body.column
     ts["classes"] = dict(counts.most_common())
+    ts["evaluation"] = None  # scores were for the previous target
     return _out(ts)
 
 
@@ -166,7 +169,7 @@ async def check_leakage(testset_id: str, train_file: UploadFile):
             f"{overlap} of {len(test_rows)} test rows ({pct}%) also appear in the training data. "
             "Metrics on this test set will look better than real-world performance."
         )
-    return LeakageOut(
+    result = LeakageOut(
         train_rows=len(train_rows),
         test_rows=len(test_rows),
         overlap_rows=overlap,
@@ -174,3 +177,5 @@ async def check_leakage(testset_id: str, train_file: UploadFile):
         duplicate_test_rows=duplicates,
         warning=warning,
     )
+    ts["leakage"] = result.model_dump()
+    return result

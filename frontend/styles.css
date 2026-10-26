@@ -338,3 +338,9 @@ input[type="text"]:focus { outline: 2px solid var(--teal); outline-offset: 1px; 
 .log-import details form { margin-top: 10px; }
 .log-import details input[type="text"] { width: 100%; }
 .log-import details .row input { flex: 1; min-width: 0; }
+
+/* Readiness breakdown + assumptions */
+#score-breakdown { margin-bottom: 24px; }
+#score-breakdown summary, #assumptions-box summary { cursor: pointer; font-weight: 600; }
+#score-table td:last-child, #score-table th:last-child { text-align: left; }
+#assumptions-box { margin-top: 8px; font-size: 0.9rem; }

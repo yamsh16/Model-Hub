@@ -18,6 +18,19 @@ FLAT_GAIN = 0.01  # flat = loss improves by less than 1% of itself over that win
 HORIZON_SPANS = 20  # give up looking this many multiples of the trained span into the future
 RISING_TOLERANCE = 0.02  # last loss this far above the best => the curve has turned upward
 
+# Stricter/looser meanings of "flat" used to build the range around the central estimate.
+RANGE_GAINS = (0.02, 0.01, 0.005)
+RANGE_R2_SLACK = 0.05  # a second curve family counts as plausible if its R² is this close to the best
+
+ASSUMPTIONS = [
+    "The loss keeps following the same smooth decay it has shown so far.",
+    "Learning rate, batch size, data and augmentation stay as they were; a schedule change "
+    "(warm restart, decay step) can break the trend.",
+    "Loss is measured the same way throughout, on the same validation data.",
+    "'Flat' is a rule of thumb, not a true optimum: models can still improve slowly after it.",
+    "This is about loss only; accuracy on your task can behave differently.",
+]
+
 Status = Literal["already_flat", "estimate", "not_reached", "rising", "unreliable"]
 
 
@@ -32,7 +45,11 @@ class EstimateOut(BaseModel):
     asymptote: float | None  # loss the fitted curve levels off at
     status: Status
     remaining: float | None = None  # more x-units (epochs/steps) until gains flatten; None if unknown
+    remaining_low: float | None = None  # optimistic end of the range
+    remaining_high: float | None = None  # pessimistic end; None with high_unbounded = no end found
+    high_unbounded: bool = False
     plateau_x: float | None = None
+    assumptions: list[str] = ASSUMPTIONS
     criterion: str
     warnings: list[str]
 
@@ -114,21 +131,40 @@ def estimate_remaining(x: list[float], values: list[float | None], series: str, 
 
     window = max(WINDOW_FRACTION * span, span / max(n - 1, 1))
     ahead = np.linspace(span, span * (1 + HORIZON_SPANS), 4000)
-    cur, nxt = f(ahead, *params), f(ahead + window, *params)
-    flat = (cur - nxt) < FLAT_GAIN * np.maximum(np.abs(cur), 1e-12)
+
+    def remaining_for(fn, prm, gain):
+        """x-units until `fn` is flat under `gain`; 0.0 if already flat; None if beyond the horizon."""
+        cur, nxt = fn(ahead, *prm), fn(ahead + window, *prm)
+        flat = (cur - nxt) < gain * np.maximum(np.abs(cur), 1e-12)
+        if not flat.any():
+            return None
+        return float(ahead[int(np.argmax(flat))] - span)
 
     out = dict(base, model=model, r2=float(r2), fitted_loss_now=now, asymptote=asymptote)
     reliable = r2 >= GOOD_R2 and n >= GOOD_POINTS
-    if flat[0]:
-        return EstimateOut(**out, status="already_flat" if reliable else "unreliable",
+
+    # Range: every plausible curve family x every "flat" strictness.
+    candidates = []
+    for m, (fn, prm, m_sse) in fits:
+        m_r2 = 1.0 - m_sse / sst if sst > 0 else 0.0
+        if m == model or m_r2 >= r2 - RANGE_R2_SLACK:
+            candidates += [remaining_for(fn, prm, g) for g in RANGE_GAINS]
+    found = [c for c in candidates if c is not None]
+    rng = dict(
+        remaining_low=min(found) if found else None,
+        remaining_high=max(found) if found and len(found) == len(candidates) else None,
+        high_unbounded=len(found) < len(candidates),
+    )
+
+    central = remaining_for(f, params, FLAT_GAIN)
+    if central == 0.0:
+        return EstimateOut(**out, **rng, status="already_flat" if reliable else "unreliable",
                            remaining=0.0, plateau_x=last_x, warnings=notes)
-    hit = np.argmax(flat) if flat.any() else None
-    if hit is None:
+    if central is None:
         notes.append(f"Gains do not flatten within {HORIZON_SPANS}x the training so far.")
-        return EstimateOut(**out, status="not_reached", warnings=notes)
-    plateau_t = float(ahead[hit])
-    return EstimateOut(**out, status="estimate" if reliable else "unreliable",
-                       remaining=plateau_t - span, plateau_x=float(xs[0] + plateau_t), warnings=notes)
+        return EstimateOut(**out, **rng, status="not_reached", warnings=notes)
+    return EstimateOut(**out, **rng, status="estimate" if reliable else "unreliable",
+                       remaining=central, plateau_x=float(xs[0] + span + central), warnings=notes)
 
 
 @router.get("/{log_id}/estimate", response_model=EstimateOut)

@@ -135,15 +135,21 @@
           </div>
           <div class="stat">
             <p class="stat-label">Training still needed</p>
-            <p class="stat-value">~[N] epochs</p>
-            <p class="stat-note">Estimated before gains flatten out</p>
+            <p class="stat-value" id="stat-needed">~[N] epochs</p>
+            <p class="stat-note" id="stat-needed-note">Estimated before gains flatten out</p>
           </div>
           <div class="stat stat-dark">
             <p class="stat-label">Readiness score</p>
-            <p class="stat-value">[00] / 100</p>
-            <p class="stat-note">Close to production-ready</p>
+            <p class="stat-value" id="stat-score">[00] / 100</p>
+            <p class="stat-note" id="stat-score-note">Close to production-ready</p>
           </div>
         </div>
+
+        <details class="panel" id="score-breakdown" hidden>
+          <summary>How the readiness score is built</summary>
+          <p class="stat-note" id="score-coverage"></p>
+          <table class="data-table" id="score-table"></table>
+        </details>
 
         <div class="panel" id="eval-panel" hidden>
           <h3>Evaluation on your test set</h3>
@@ -177,6 +183,10 @@
               <span><i class="swatch swatch-val"></i><span id="legend-val">Validation</span></span>
             </div>
             <p class="stat-note" id="chart-note">Sample curve. Load your own training log below.</p>
+            <details id="assumptions-box" hidden>
+              <summary>Assumptions behind the training estimate</summary>
+              <ul class="advice" id="assumptions-list"></ul>
+            </details>
 
             <div class="inline-form log-import">
               <label for="log-file">Training log CSV <span class="optional">(Keras, Lightning, HF Trainer, or a W&amp;B export)</span></label>
@@ -201,7 +211,7 @@
           </div>
           <div class="panel">
             <h3>What to do next</h3>
-            <ul class="advice">
+            <ul class="advice" id="advice-list">
               <li>Validation loss is levelling off: more epochs alone will give small gains.</li>
               <li>Training beats validation: add data or regularization before training further.</li>
               <li>Weakest on [CLASS / TASK]: collect more examples there.</li>

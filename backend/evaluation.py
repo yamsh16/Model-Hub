@@ -94,10 +94,12 @@ def evaluate(testset_id: str, body: EvaluateIn):
     labels = classes + [UNPARSED] if unparsed else classes
 
     m = compute_metrics(y_true, y_pred, classes=labels)
-    return EvaluationOut(
+    result = EvaluationOut(
         **m.model_dump(),
         total_rows=len(ts["rows"]),
         sampled=sampled,
         unparsed=unparsed,
         target=ts["target"],
     )
+    ts["evaluation"] = result.model_dump()  # the readiness score reads this
+    return result

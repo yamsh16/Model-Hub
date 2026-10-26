@@ -15,8 +15,10 @@ The MVP loop works end to end in the browser (plain HTML/CSS/JS,
 [design mockup](frontend/index.html)): attach an OpenAI-compatible endpoint, upload a test-set
 CSV and pick the target column, run it through the endpoint to get real accuracy / F1 /
 per-class scores / a confusion matrix, and chat with the model (streamed, with history kept per
-endpoint). Training logs (CSV, or an MLflow run) draw a real loss curve. The "training still
-needed" card is still a sample until the estimate gets its UI (Day 16); the readiness score is Day 17.
+endpoint). Training logs (CSV, or an MLflow run) draw a real loss curve, and the "training still
+needed" card shows an estimate with a range and its assumptions. The readiness score and the
+"what to do next" list are computed from whatever is loaded (evaluation, leakage check, training
+log); the score says how many signals it is built from and shows its breakdown.
 
 ```bash
 cd frontend
@@ -39,7 +41,8 @@ backend/
   evaluation.py    runs a test set through an attached endpoint and scores it (POST /testsets/{id}/evaluate)
   chat.py          chat through an endpoint, plain or streamed as SSE (POST /endpoints/{id}/chat)
   logs.py          training-log CSV upload and MLflow import (POST /logs, POST /logs/mlflow)
-  estimate.py      "training still needed" from curve-fitting a loss series (GET /logs/{id}/estimate)
+  estimate.py      "training still needed" from curve-fitting a loss series, with a range and stated assumptions (GET /logs/{id}/estimate)
+  readiness.py     0-100 readiness score + prioritised "what to do next" (GET /readiness?testset_id=&log_id=)
   test_*.py        pytest tests
   requirements.txt Python dependencies
 ```
@@ -64,7 +67,10 @@ pytest
    Up to 200 rows are scored (a fixed random sample above that). Replies naming no single class
    count as wrong. ROC-AUC shows n/a because chat endpoints return labels, not probabilities.
 5. **Chat:** pick the model in the chat card; replies stream in and history survives a reload.
-6. **Training log:** upload a log CSV or import an MLflow run → the loss curve is drawn from it.
+6. **Training log:** upload a log CSV or import an MLflow run → the loss curve is drawn from it,
+   the "training still needed" card shows an estimate with a range, and the assumptions behind it.
+7. **Readiness:** the score and the advice list update after each step. Without an evaluation
+   there is no score; with only some signals, the verdict says "based on N of 5".
 
 Known limits: all state is in server memory (restart = empty) until the Day 18 database;
 evaluation runs inside the request; Weights & Biases is supported through its CSV export
@@ -163,8 +169,8 @@ the end date, and don't pull work forward.
 - [x] Day 13 (Oct 22): real loss-curve chart
 - [x] Day 14 (Oct 23): MLflow / W&B import (MLflow via REST; W&B via its CSV export, no direct API import yet)
 - [x] Day 15 (Oct 24): "training still needed" estimate from curve-fitting
-- [ ] Day 16 (Oct 25): estimate ranges, stated assumptions, and UI
-- [ ] Day 17 (Oct 26): readiness score + "what to do next" from real metrics
+- [x] Day 16 (Oct 25): estimate ranges, stated assumptions, and UI
+- [x] Day 17 (Oct 26): readiness score + "what to do next" from real metrics
 
 **Phase 3 — accounts and data (Days 18–21)**
 

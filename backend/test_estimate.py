@@ -90,3 +90,24 @@ def test_http_route_picks_val_loss_and_validates():
 
     no_loss = client.post("/logs", files={"file": ("l.csv", "epoch,acc\n" + "".join(f"{i},0.{i}\n" for i in range(8)))})
     assert client.get(f"/logs/{no_loss.json()['id']}/estimate").status_code == 422
+
+
+def test_range_brackets_the_central_estimate():
+    e = run(*expo(10))
+    assert e.remaining_low is not None and e.remaining_high is not None
+    assert e.remaining_low <= e.remaining <= e.remaining_high
+    assert e.remaining_low < e.remaining_high  # stricter/looser "flat" rules really differ
+    assert not e.high_unbounded
+
+
+def test_states_its_assumptions():
+    e = run(*expo(10))
+    assert len(e.assumptions) >= 4 and "flat" in e.criterion
+
+
+def test_slow_decay_gives_a_wide_range():
+    # Slow power-law decay: the strict end of the range lies far beyond the central estimate.
+    y = [float(1.0 * (i + 1) ** -0.15) for i in range(12)]
+    e = run(list(range(12)), y)
+    assert e.status == "estimate"
+    assert e.high_unbounded or e.remaining_high > 3 * e.remaining

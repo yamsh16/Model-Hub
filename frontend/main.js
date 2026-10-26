@@ -192,6 +192,7 @@ tsTarget.addEventListener("change", async () => {
     const classes = Object.entries(ts.classes).map(([k, n]) => `${k}: ${n}`).join(", ");
     setTsStatus(`Target "${ts.target}" — ${classes}`, "success");
     tsLeakBox.hidden = false;
+    refreshReadiness(); // changing the target discards the previous evaluation
     await fillEndpointSelect();
   } catch (err) {
     tsLeakBox.hidden = tsEvalBox.hidden = true;
@@ -215,6 +216,7 @@ tsTrain.addEventListener("change", async () => {
       tsWarning.textContent = `No overlap between ${r.train_rows} training rows and the test set.`;
       tsWarning.className = "form-status is-success";
     }
+    refreshReadiness();
   } catch (err) {
     tsWarning.textContent = err.message;
     tsWarning.className = "form-status is-error";
@@ -265,6 +267,7 @@ function renderReport(r) {
   );
   document.getElementById("eval-panel").hidden = false;
   document.getElementById("report").scrollIntoView({ behavior: "smooth" });
+  refreshReadiness();
 }
 
 tsRun.addEventListener("click", async () => {
@@ -287,6 +290,7 @@ tsRun.addEventListener("click", async () => {
 });
 
 // ----- 2d. Training log: CSV upload / MLflow import -> real loss curve -----
+let currentLogId = null;
 const lossChart = document.getElementById("loss-chart");
 const logFile = document.getElementById("log-file");
 const logStatus = document.getElementById("log-status");
@@ -319,6 +323,8 @@ function segments(xs, ys, px, py) {
 }
 
 function renderLossChart(log) {
+  currentLogId = log.id;
+  refreshReadiness();
   const lines = [
     { name: log.train_loss, cls: "line-train", label: "legend-train", fallback: "Training" },
     { name: log.val_loss, cls: "line-val", label: "legend-val", fallback: "Validation" },
@@ -423,6 +429,93 @@ document.getElementById("mlflow-form").addEventListener("submit", async (e) => {
     btn.disabled = false;
   }
 });
+
+// ----- 2e. Readiness score, training estimate and advice (all computed server-side) -----
+const adviceList = document.getElementById("advice-list");
+const SAMPLE_ADVICE = adviceList.innerHTML; // keep the sample text for when there is no data yet
+
+function setList(list, items) {
+  list.innerHTML = "";
+  for (const text of items) {
+    const li = document.createElement("li");
+    li.textContent = text; // textContent: advice embeds class labels from user data
+    list.appendChild(li);
+  }
+}
+
+function renderEstimate(est) {
+  const value = document.getElementById("stat-needed");
+  const note = document.getElementById("stat-needed-note");
+  const box = document.getElementById("assumptions-box");
+  if (!est) {
+    value.textContent = "~[N] epochs";
+    note.textContent = "Load a training log to estimate this";
+    box.hidden = true;
+    return;
+  }
+  const unit = `${est.x_name}s`;
+  const range =
+    est.remaining_low === null
+      ? ""
+      : est.high_unbounded
+      ? ` · range ${fmt(est.remaining_low)} to no clear end`
+      : ` · range ${fmt(est.remaining_low)} to ${fmt(est.remaining_high)}`;
+  const label = est.status === "unreliable" ? "rough estimate" : "estimate";
+  if (est.status === "estimate" || (est.status === "unreliable" && est.remaining !== null)) {
+    value.textContent = `~${fmt(est.remaining)} ${unit}`;
+    note.textContent = `${label} from ${est.series}${range}`;
+  } else if (est.status === "already_flat") {
+    value.textContent = "None";
+    note.textContent = `${est.series} has already levelled off`;
+  } else if (est.status === "rising") {
+    value.textContent = "Stop";
+    note.textContent = `${est.series} is rising: likely overfitting`;
+  } else if (est.status === "not_reached") {
+    value.textContent = "Many";
+    note.textContent = `${est.series} is still falling steadily`;
+  } else {
+    value.textContent = "Unclear";
+    note.textContent = "Log too short to estimate";
+  }
+  setList(document.getElementById("assumptions-list"), [
+    `Rule used: ${est.criterion}.`,
+    ...est.warnings,
+    ...est.assumptions,
+  ]);
+  box.hidden = false;
+}
+
+function renderReadiness(r) {
+  document.getElementById("stat-score").textContent = r.score === null ? "– / 100" : `${r.score} / 100`;
+  document.getElementById("stat-score-note").textContent = r.verdict;
+  renderEstimate(r.estimate);
+  setList(adviceList, r.advice.map((a) => a.text));
+  if (r.advice.length === 0) adviceList.innerHTML = SAMPLE_ADVICE;
+
+  const breakdown = document.getElementById("score-breakdown");
+  breakdown.hidden = r.components.length === 0;
+  document.getElementById("score-coverage").textContent =
+    `Built from the signals available (${Math.round(r.coverage * 100)}% of the full weight). ` +
+    "It is a rule-of-thumb summary, not a guarantee.";
+  fillTable(
+    document.getElementById("score-table"),
+    ["Signal", "Weight", "Score", "Detail"],
+    r.components.map((c) => [c.label, `${Math.round(c.weight * 100)}%`, `${Math.round(c.value * 100)}`, c.detail])
+  );
+}
+
+// Recompute from whatever is loaded; safe to call any time (ignored if nothing is loaded).
+async function refreshReadiness() {
+  const params = new URLSearchParams();
+  if (testsetId) params.set("testset_id", testsetId);
+  if (currentLogId) params.set("log_id", currentLogId);
+  if (![...params].length) return;
+  try {
+    renderReadiness(await apiJson(`/readiness?${params}`));
+  } catch {
+    // Backend down or the server restarted and forgot the ids; keep what is on screen.
+  }
+}
 
 // ----- 3. Chat -----
 // The server keeps no chat state; the page sends the whole conversation each turn and keeps

@@ -80,3 +80,9 @@ def test_http_route():
     assert r.status_code == 200
     assert r.json()["accuracy"] == pytest.approx(4 / 6)
     assert client.post("/metrics", json={"y_true": [], "y_pred": []}).status_code == 422
+
+
+def test_macro_f1_ignores_classes_that_never_occur_in_y_true():
+    # "?" is only ever predicted (like the unparseable bucket); it must not drag macro F1 down.
+    m = compute_metrics(["a", "b", "a", "b"], ["a", "b", "?", "b"], classes=["a", "b", "?"])
+    assert m.f1_macro == pytest.approx((2 / 3 + 1.0) / 2)

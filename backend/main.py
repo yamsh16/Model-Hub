@@ -7,6 +7,7 @@ from estimate import router as estimate_router
 from evaluation import router as evaluation_router
 from logs import router as logs_router
 from metrics import router as metrics_router
+from readiness import router as readiness_router
 from testsets import router as testsets_router
 
 app = FastAPI(title="Model Hub API", version="0.1.0")
@@ -17,6 +18,7 @@ app.include_router(testsets_router)
 app.include_router(evaluation_router)
 app.include_router(logs_router)
 app.include_router(estimate_router)
+app.include_router(readiness_router)
 
 # Allow the static frontend (python -m http.server 8000) to call the API in development.
 app.add_middleware(

@@ -71,7 +71,9 @@ def compute_metrics(
         n=len(y_true),
         classes=labels,
         accuracy=float(accuracy_score(y_true, y_pred)),
-        f1_macro=float(f1_score(y_true, y_pred, labels=labels, average="macro", zero_division=0)),
+        # Macro-average only over classes that occur in y_true. A class that was merely predicted
+        # (e.g. the "(unparseable)" bucket in evaluation) would otherwise add a spurious 0.
+        f1_macro=_macro_f1(per_class),
         f1_weighted=float(
             f1_score(y_true, y_pred, labels=labels, average="weighted", zero_division=0)
         ),
@@ -79,6 +81,11 @@ def compute_metrics(
         per_class=per_class,
         confusion_matrix=confusion_matrix(y_true, y_pred, labels=labels).tolist(),
     )
+
+
+def _macro_f1(per_class: list[ClassMetrics]) -> float:
+    scored = [c.f1 for c in per_class if c.support > 0]
+    return sum(scored) / len(scored) if scored else 0.0
 
 
 def _roc_auc(
