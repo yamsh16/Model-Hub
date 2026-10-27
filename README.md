@@ -43,6 +43,9 @@ backend/
   logs.py          training-log CSV upload and MLflow import (POST /logs, POST /logs/mlflow)
   estimate.py      "training still needed" from curve-fitting a loss series, with a range and stated assumptions (GET /logs/{id}/estimate)
   readiness.py     0-100 readiness score + prioritised "what to do next" (GET /readiness?testset_id=&log_id=)
+  db.py            database URL + SQLAlchemy base (DATABASE_URL, defaults to the docker-compose Postgres)
+  models.py        schema: users, models, test_sets, training_logs, reports, chat_sessions, chat_messages
+  migrations/      Alembic migrations (alembic.ini points at them)
   test_*.py        pytest tests
   requirements.txt Python dependencies
 ```
@@ -50,11 +53,20 @@ backend/
 Run the backend:
 
 ```bash
+docker compose up -d --wait             # PostgreSQL on 127.0.0.1:5432 (needs Docker Desktop running)
 cd backend
 pip install -r requirements.txt
+python -m alembic upgrade head          # create/upgrade the tables
 uvicorn main:app --reload --port 8001   # :8000 is taken by the frontend
-pytest
+pytest                                  # schema tests also run on Postgres when it is up
 ```
+
+The API still keeps endpoints, test sets and logs in memory; moving it onto these tables
+comes with sign-in (Days 19–20). Use `127.0.0.1`, not `localhost`, in `DATABASE_URL` on
+Windows: `localhost` tries IPv6 first and each connection waits ~8 s before falling back.
+After changing `models.py`: `python -m alembic revision --autogenerate -m "what changed"`,
+review the file, then `python -m alembic upgrade head`; `python -m alembic check` fails if
+the models and migrations disagree.
 
 ## MVP walkthrough
 
@@ -174,7 +186,7 @@ the end date, and don't pull work forward.
 
 **Phase 3 — accounts and data (Days 18–21)**
 
-- [ ] Day 18 (Oct 27): PostgreSQL schema for users / models / reports / chat
+- [x] Day 18 (Oct 27): PostgreSQL schema for users / models / reports / chat
 - [ ] Day 19 (Oct 28): sign-in / auth
 - [ ] Day 20 (Oct 29): per-user isolation + isolation tests
 - [ ] Day 21 (Oct 30): buffer — tests, bug fixes
