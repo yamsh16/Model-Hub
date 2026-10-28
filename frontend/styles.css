@@ -344,3 +344,12 @@ input[type="text"]:focus { outline: 2px solid var(--teal); outline-offset: 1px; 
 #score-breakdown summary, #assumptions-box summary { cursor: pointer; font-weight: 600; }
 #score-table td:last-child, #score-table th:last-child { text-align: left; }
 #assumptions-box { margin-top: 8px; font-size: 0.9rem; }
+
+/* Sign-in */
+.auth-slot { display: inline-flex; align-items: center; gap: 10px; }
+.auth-slot .btn { padding: 8px 14px; }
+.auth-dialog { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px; width: min(420px, 92vw); }
+.auth-dialog::backdrop { background: rgba(15, 27, 43, 0.5); }
+.auth-dialog h2 { margin-bottom: 18px; }
+.auth-dialog input { width: 100%; }
+.auth-actions { margin-top: 18px; flex-wrap: wrap; gap: 8px; }

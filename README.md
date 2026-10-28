@@ -43,6 +43,7 @@ backend/
   logs.py          training-log CSV upload and MLflow import (POST /logs, POST /logs/mlflow)
   estimate.py      "training still needed" from curve-fitting a loss series, with a range and stated assumptions (GET /logs/{id}/estimate)
   readiness.py     0-100 readiness score + prioritised "what to do next" (GET /readiness?testset_id=&log_id=)
+  auth.py          register / login / me, argon2 password hashes, JWT bearer tokens, login throttle (POST /auth/*)
   db.py            database URL + SQLAlchemy base (DATABASE_URL, defaults to the docker-compose Postgres)
   models.py        schema: users, models, test_sets, training_logs, reports, chat_sessions, chat_messages
   migrations/      Alembic migrations (alembic.ini points at them)
@@ -60,6 +61,14 @@ python -m alembic upgrade head          # create/upgrade the tables
 uvicorn main:app --reload --port 8001   # :8000 is taken by the frontend
 pytest                                  # schema tests also run on Postgres when it is up
 ```
+
+**Sign-in:** set `JWT_SECRET` to a long random string before running the backend for anything but
+a quick try (without it a random key is used and everyone is signed out on each restart). Tokens
+last 12 hours and are sent as `Authorization: Bearer`. Five failed logins for one email from one
+address lock that pair out for 15 minutes (in memory, per process; behind a proxy the "address"
+is the proxy's). The `current_user` dependency in `auth.py` is ready, but the data routes
+(endpoints, test sets, logs, chat) are **not yet protected** — that, with per-user ownership,
+is Day 20.
 
 The API still keeps endpoints, test sets and logs in memory; moving it onto these tables
 comes with sign-in (Days 19–20). Use `127.0.0.1`, not `localhost`, in `DATABASE_URL` on
@@ -187,7 +196,7 @@ the end date, and don't pull work forward.
 **Phase 3 — accounts and data (Days 18–21)**
 
 - [x] Day 18 (Oct 27): PostgreSQL schema for users / models / reports / chat
-- [ ] Day 19 (Oct 28): sign-in / auth
+- [x] Day 19 (Oct 28): sign-in / auth
 - [ ] Day 20 (Oct 29): per-user isolation + isolation tests
 - [ ] Day 21 (Oct 30): buffer — tests, bug fixes
 

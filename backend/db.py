@@ -21,3 +21,16 @@ def make_engine(url: str | None = None):
 
 def make_session_factory(engine):
     return sessionmaker(engine, expire_on_commit=False)
+
+
+_session_factory = None
+
+
+def get_db():
+    """FastAPI dependency: one session per request. The engine is created on first use so that
+    importing the app (and running tests that never touch the database) needs no database."""
+    global _session_factory
+    if _session_factory is None:
+        _session_factory = make_session_factory(make_engine())
+    with _session_factory() as session:
+        yield session

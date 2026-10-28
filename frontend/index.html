@@ -26,6 +26,11 @@
         <a href="#report">Model report</a>
         <a href="#chat">Chat</a>
         <a href="#attach" class="btn btn-dark">Attach a model</a>
+        <span class="auth-slot">
+          <span id="auth-user" class="mono small" hidden></span>
+          <button type="button" class="btn btn-outline" id="auth-open">Sign in</button>
+          <button type="button" class="btn btn-outline" id="auth-signout" hidden>Sign out</button>
+        </span>
       </nav>
     </div>
   </header>
@@ -276,6 +281,23 @@
       </div>
     </section>
   </main>
+
+  <!-- ===== Sign in / create account ===== -->
+  <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
+    <form id="auth-form" class="inline-form" method="dialog">
+      <h2 id="auth-title">Sign in</h2>
+      <label for="auth-email">Email</label>
+      <input type="text" id="auth-email" autocomplete="email" required>
+      <label for="auth-password">Password <span class="optional" id="auth-hint"></span></label>
+      <input type="password" id="auth-password" autocomplete="current-password" required>
+      <p class="form-status" id="auth-status"></p>
+      <div class="row auth-actions">
+        <button type="submit" class="btn btn-dark" id="auth-submit">Sign in</button>
+        <button type="button" class="btn btn-outline" id="auth-toggle">Create an account</button>
+        <button type="button" class="btn btn-outline" id="auth-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="main.js"></script>
 </body>

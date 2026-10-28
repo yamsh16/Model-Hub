@@ -1,6 +1,109 @@
-// Model Hub — front-end behaviour.
-// Nothing talks to a server yet: these handlers only update the page.
-// When the backend exists, the TODOs below are where the real requests go.
+// Model Hub — front-end behaviour. Talks to the backend at API_BASE (see section 0).
+
+// ----- 0. Sign-in -----
+// The API token is kept in localStorage so a reload stays signed in. Trade-off: script on this
+// page could read it, so never inject untrusted HTML (the page uses textContent for that reason).
+const API_BASE = "http://localhost:8001";
+const TOKEN_KEY = "modelhub-token";
+let authToken = null;
+let authUser = null;
+try {
+  authToken = localStorage.getItem(TOKEN_KEY);
+} catch {
+  // storage blocked: sign-in just won't survive a reload
+}
+
+const authDialog = document.getElementById("auth-dialog");
+const authForm = document.getElementById("auth-form");
+const authStatus = document.getElementById("auth-status");
+let authMode = "signin"; // or "register"
+
+function setAuth(token, user) {
+  authToken = token;
+  authUser = user;
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+  document.getElementById("auth-user").textContent = user ? user.email : "";
+  document.getElementById("auth-user").hidden = !user;
+  document.getElementById("auth-open").hidden = !!user;
+  document.getElementById("auth-signout").hidden = !user;
+}
+
+// fetch() that attaches the token, and drops a token the server no longer accepts.
+async function apiFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401 && authToken && !url.includes("/auth/")) setAuth(null, null);
+  return res;
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const register = mode === "register";
+  document.getElementById("auth-title").textContent = register ? "Create an account" : "Sign in";
+  document.getElementById("auth-submit").textContent = register ? "Create account" : "Sign in";
+  document.getElementById("auth-toggle").textContent = register ? "I have an account" : "Create an account";
+  document.getElementById("auth-hint").textContent = register ? "(at least 10 characters)" : "";
+  document.getElementById("auth-password").autocomplete = register ? "new-password" : "current-password";
+  authStatus.textContent = "";
+}
+
+document.getElementById("auth-open").addEventListener("click", () => {
+  setAuthMode("signin");
+  authForm.reset();
+  authDialog.showModal();
+});
+document.getElementById("auth-cancel").addEventListener("click", () => authDialog.close());
+document.getElementById("auth-toggle").addEventListener("click", () =>
+  setAuthMode(authMode === "signin" ? "register" : "signin")
+);
+document.getElementById("auth-signout").addEventListener("click", () => setAuth(null, null));
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const submit = document.getElementById("auth-submit");
+  submit.disabled = true;
+  authStatus.textContent = "";
+  authStatus.className = "form-status";
+  try {
+    const res = await fetch(`${API_BASE}/auth/${authMode === "register" ? "register" : "login"}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: document.getElementById("auth-email").value,
+        password: document.getElementById("auth-password").value,
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : "Could not sign in.");
+    setAuth(body.access_token, body.user);
+    authForm.reset();
+    authDialog.close();
+  } catch (err) {
+    authStatus.textContent =
+      err instanceof TypeError ? "Could not reach the Model Hub API. Is the backend running?" : err.message;
+    authStatus.className = "form-status is-error";
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+// Restore a saved session; a stale token is dropped by apiFetch's 401 handling.
+(async () => {
+  if (!authToken) return;
+  try {
+    const res = await apiFetch(`${API_BASE}/auth/me`);
+    if (res.ok) setAuth(authToken, await res.json());
+    else setAuth(null, null);
+  } catch {
+    // backend down: stay "signed out" in the UI but keep the token for next time
+  }
+})();
 
 // ----- 1. Drag-and-drop file upload -----
 const dropzone = document.getElementById("dropzone");
@@ -39,7 +142,6 @@ fileInput.addEventListener("change", () => showFiles(fileInput.files));
 
 // ----- 2. Connect by endpoint -----
 // The backend runs separately from the static frontend (see README), so it needs its own origin.
-const API_BASE = "http://localhost:8001";
 
 const endpointForm = document.getElementById("endpoint-form");
 const endpointStatus = document.getElementById("endpoint-status");
@@ -74,7 +176,7 @@ function renderEndpoints(endpoints) {
 
 async function loadEndpoints() {
   try {
-    const res = await fetch(`${API_BASE}/endpoints`);
+    const res = await apiFetch(`${API_BASE}/endpoints`);
     if (!res.ok) return; // backend may not be running yet; fail quietly on load
     const eps = await res.json();
     renderEndpoints(eps);
@@ -86,7 +188,7 @@ async function loadEndpoints() {
 
 async function deleteEndpoint(id) {
   try {
-    await fetch(`${API_BASE}/endpoints/${id}`, { method: "DELETE" });
+    await apiFetch(`${API_BASE}/endpoints/${id}`, { method: "DELETE" });
   } finally {
     loadEndpoints();
   }
@@ -106,7 +208,7 @@ endpointForm.addEventListener("submit", async (e) => {
   setStatus("Connecting…");
 
   try {
-    const res = await fetch(`${API_BASE}/endpoints`, {
+    const res = await apiFetch(`${API_BASE}/endpoints`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, url, model, api_key: api_key || null }),
@@ -150,7 +252,7 @@ function setTsStatus(text, kind) {
 }
 
 async function apiJson(path, options) {
-  const res = await fetch(`${API_BASE}${path}`, options);
+  const res = await apiFetch(`${API_BASE}${path}`, options);
   const body = await res.json();
   if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : "Request failed.");
   return body;
@@ -621,7 +723,7 @@ chatForm.addEventListener("submit", async (e) => {
   let reply = "";
 
   try {
-    const res = await fetch(`${API_BASE}/endpoints/${endpointId}/chat`, {
+    const res = await apiFetch(`${API_BASE}/endpoints/${endpointId}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: history, stream: true }),
