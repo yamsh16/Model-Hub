@@ -43,6 +43,7 @@ backend/
   logs.py          training-log CSV upload and MLflow import (POST /logs, POST /logs/mlflow)
   estimate.py      "training still needed" from curve-fitting a loss series, with a range and stated assumptions (GET /logs/{id}/estimate)
   readiness.py     0-100 readiness score + prioritised "what to do next" (GET /readiness?testset_id=&log_id=)
+  config.py, secretbox.py, ownership.py   secrets/keys, API-key encryption, the one "does this row belong to the user" check
   auth.py          register / login / me, argon2 password hashes, JWT bearer tokens, login throttle (POST /auth/*)
   db.py            database URL + SQLAlchemy base (DATABASE_URL, defaults to the docker-compose Postgres)
   models.py        schema: users, models, test_sets, training_logs, reports, chat_sessions, chat_messages
@@ -62,16 +63,18 @@ uvicorn main:app --reload --port 8001   # :8000 is taken by the frontend
 pytest                                  # schema tests also run on Postgres when it is up
 ```
 
-**Sign-in:** set `JWT_SECRET` to a long random string before running the backend for anything but
-a quick try (without it a random key is used and everyone is signed out on each restart). Tokens
-last 12 hours and are sent as `Authorization: Bearer`. Five failed logins for one email from one
-address lock that pair out for 15 minutes (in memory, per process; behind a proxy the "address"
-is the proxy's). The `current_user` dependency in `auth.py` is ready, but the data routes
-(endpoints, test sets, logs, chat) are **not yet protected** — that, with per-user ownership,
-is Day 20.
-
-The API still keeps endpoints, test sets and logs in memory; moving it onto these tables
-comes with sign-in (Days 19–20). Use `127.0.0.1`, not `localhost`, in `DATABASE_URL` on
+**Sign-in and isolation:** every route except `/health` and `/auth/register|login` requires a
+bearer token, and every attached model, test set and training log belongs to the account that
+created it. Another account's id answers `404`, the same as an id that doesn't exist.
+Third-party API keys are stored encrypted. In development, `JWT_SECRET` and `ENCRYPTION_KEY`
+are generated on first run into `backend/.dev-secrets/` (git-ignored) so sign-ins and stored
+keys survive restarts; **in production set both as environment variables** and keep the
+encryption key safe: lose it and stored keys can't be read (those models must be re-attached).
+Tokens last 12 hours. Five failed logins for one email from one address lock that pair out for
+15 minutes (in memory, per process; behind a proxy the "address" is the proxy's).
+Endpoints, test sets and training logs now live in PostgreSQL. Saved chat history is still
+kept in the browser (cleared on sign-out); the `chat_*` and `reports` tables are not used yet.
+Use `127.0.0.1`, not `localhost`, in `DATABASE_URL` on
 Windows: `localhost` tries IPv6 first and each connection waits ~8 s before falling back.
 After changing `models.py`: `python -m alembic revision --autogenerate -m "what changed"`,
 review the file, then `python -m alembic upgrade head`; `python -m alembic check` fails if
@@ -79,9 +82,10 @@ the models and migrations disagree.
 
 ## MVP walkthrough
 
-1. Start the backend (`uvicorn main:app --port 8001`; add `ALLOW_PRIVATE_ENDPOINTS=1` to
+1. Start the database and backend (see "Run the backend"; `uvicorn main:app --port 8001`; add `ALLOW_PRIVATE_ENDPOINTS=1` to
    attach a model on localhost, e.g. Ollama) and the frontend (`python -m http.server 8000`).
-2. **Attach:** name, OpenAI-compatible chat URL, model, optional key → it is probed and listed.
+2. **Sign in:** create an account (top right); everything below is private to it.
+   **Attach:** name, OpenAI-compatible chat URL, model, optional key → it is probed and listed.
 3. **Test set:** upload a CSV, pick the target column (needs 2–50 distinct values), optionally
    upload the training CSV to see the train/test overlap warning.
 4. **Evaluate:** choose the endpoint, press Evaluate → the report fills with real metrics.
@@ -93,8 +97,7 @@ the models and migrations disagree.
 7. **Readiness:** the score and the advice list update after each step. Without an evaluation
    there is no score; with only some signals, the verdict says "based on N of 5".
 
-Known limits: all state is in server memory (restart = empty) until the Day 18 database;
-evaluation runs inside the request; Weights & Biases is supported through its CSV export
+Known limits: evaluation runs inside the request; Weights & Biases is supported through its CSV export
 (Run → Export), not a direct API import.
 
 ## Target stack
@@ -197,7 +200,7 @@ the end date, and don't pull work forward.
 
 - [x] Day 18 (Oct 27): PostgreSQL schema for users / models / reports / chat
 - [x] Day 19 (Oct 28): sign-in / auth
-- [ ] Day 20 (Oct 29): per-user isolation + isolation tests
+- [x] Day 20 (Oct 29): per-user isolation + isolation tests
 - [ ] Day 21 (Oct 30): buffer — tests, bug fixes
 
 **Phase 4 — frontend migration (Days 22–24)**

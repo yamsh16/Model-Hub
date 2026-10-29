@@ -10,7 +10,6 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def setup(monkeypatch):
-    logs._logs.clear()
     monkeypatch.setattr(endpoints, "check_url_is_public", lambda url: None)
 
 

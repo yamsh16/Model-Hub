@@ -14,8 +14,6 @@ EP = {"name": "m", "url": "https://api.example.com/v1/chat/completions", "model"
 
 @pytest.fixture(autouse=True)
 def setup(monkeypatch):
-    for store in (testsets._testsets, endpoints._registry, logs._logs):
-        store.clear()
     monkeypatch.setattr(endpoints, "check_url_is_public", lambda url: None)
     monkeypatch.setattr(endpoints, "probe", lambda *a: 5)
 

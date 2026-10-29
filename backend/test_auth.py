@@ -4,36 +4,13 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
-from sqlalchemy.pool import StaticPool
 
 import auth
-import db
 import models
 from main import app
 
 PASSWORD = "correct horse battery"
-
-
-@pytest.fixture(autouse=True)
-def database():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-
-    @event.listens_for(engine, "connect")
-    def _fk_on(conn, _):
-        conn.execute("PRAGMA foreign_keys=ON")
-
-    db.Base.metadata.create_all(engine)
-
-    def override():
-        with Session(engine) as session:
-            yield session
-
-    app.dependency_overrides[db.get_db] = override
-    auth.throttle = auth.LoginThrottle()
-    yield engine
-    app.dependency_overrides.clear()
 
 
 client = TestClient(app)

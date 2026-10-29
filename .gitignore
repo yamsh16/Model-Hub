@@ -23,3 +23,6 @@ uploads/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Development secrets generated on first run (see backend/config.py)
+.dev-secrets/

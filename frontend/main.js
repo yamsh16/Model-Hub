@@ -7,6 +7,7 @@ const API_BASE = "http://localhost:8001";
 const TOKEN_KEY = "modelhub-token";
 let authToken = null;
 let authUser = null;
+let sessionUserId = null; // which account the page is currently showing data for
 try {
   authToken = localStorage.getItem(TOKEN_KEY);
 } catch {
@@ -31,6 +32,23 @@ function setAuth(token, user) {
   document.getElementById("auth-user").hidden = !user;
   document.getElementById("auth-open").hidden = !!user;
   document.getElementById("auth-signout").hidden = !user;
+
+  // Nothing from one account may stay on screen (or in this browser) for the next one, so
+  // leaving an account clears the saved chats and reloads the page; entering one loads its data.
+  const previous = sessionUserId;
+  sessionUserId = user ? user.id : null;
+  if (previous && previous !== sessionUserId) {
+    try {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith("modelhub-chat-"))
+        .forEach((k) => localStorage.removeItem(k));
+    } catch {
+      // ignore
+    }
+    location.reload();
+  } else if (!previous && sessionUserId) {
+    loadEndpoints();
+  }
 }
 
 // fetch() that attaches the token, and drops a token the server no longer accepts.
@@ -202,6 +220,7 @@ endpointForm.addEventListener("submit", async (e) => {
   const model = document.getElementById("ep-model").value.trim();
   const api_key = document.getElementById("ep-key").value.trim();
   if (!name || !url || !model) return;
+  if (!authToken) return setStatus("Sign in first (top right) to attach a model.", "error");
 
   const submitBtn = endpointForm.querySelector("button[type=submit]");
   submitBtn.disabled = true;

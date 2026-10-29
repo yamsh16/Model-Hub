@@ -6,17 +6,21 @@ import uuid
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, HttpUrl
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-router = APIRouter(prefix="/endpoints", tags=["endpoints"])
+import secretbox
+from auth import current_user
+from db import get_db
+from models import Model, User
+from ownership import owned
+
+router = APIRouter(prefix="/endpoints", tags=["endpoints"], dependencies=[Depends(current_user)])
 
 PROBE_TIMEOUT_SECONDS = 10.0
 EVAL_TIMEOUT_SECONDS = 30.0
-
-# In-memory registry until the PostgreSQL schema lands. Keyed by endpoint id.
-_registry: dict[str, dict] = {}
-
 
 class EndpointIn(BaseModel):
     name: str
@@ -164,45 +168,57 @@ def open_chat_stream(ep: dict, messages: list[dict]) -> httpx.Response:
     return r
 
 
-def get_endpoint(endpoint_id: str) -> dict:
-    ep = _registry.get(endpoint_id)
-    if ep is None:
-        raise HTTPException(404, "Endpoint not found")
-    return ep
+def _endpoint_rows(user: User):
+    return (Model.user_id == user.id, Model.kind == "endpoint")
 
 
-def _out(ep: dict) -> EndpointOut:
-    return EndpointOut(**{k: ep[k] for k in EndpointOut.model_fields})
+def get_endpoint(db: Session, user: User, endpoint_id: str) -> dict:
+    """The signed-in user's endpoint as a plain dict, with the API key decrypted for use."""
+    row = owned(db, Model, endpoint_id, user, "Endpoint", Model.kind == "endpoint")
+    return {
+        "id": str(row.id),
+        "name": row.name,
+        "url": row.url,
+        "model": row.model_name,
+        "api_key": secretbox.decrypt(row.api_key_encrypted),
+        "latency_ms": row.latency_ms or 0,
+    }
+
+
+def _out(row: Model) -> EndpointOut:
+    return EndpointOut(
+        id=str(row.id), name=row.name, url=row.url, model=row.model_name,
+        latency_ms=row.latency_ms or 0,
+    )
 
 
 @router.post("", response_model=EndpointOut, status_code=201)
-def register(body: EndpointIn):
+def register(body: EndpointIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     url = str(body.url)
     check_url_is_public(url)
     latency = probe(url, body.model, body.api_key)
-    ep = {
-        "id": uuid.uuid4().hex,
-        "name": body.name,
-        "url": url,
-        "model": body.model,
-        "api_key": body.api_key,  # stored server-side only, never returned
-        "latency_ms": latency,
-    }
-    _registry[ep["id"]] = ep
-    return _out(ep)
+    row = Model(
+        user_id=user.id, name=body.name, kind="endpoint", url=url, model_name=body.model,
+        api_key_encrypted=secretbox.encrypt(body.api_key),  # encrypted at rest, never returned
+        latency_ms=latency,
+    )
+    db.add(row)
+    db.commit()
+    return _out(row)
 
 
 @router.get("", response_model=list[EndpointOut])
-def list_endpoints():
-    return [_out(ep) for ep in _registry.values()]
+def list_endpoints(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    rows = db.scalars(select(Model).where(*_endpoint_rows(user)).order_by(Model.created_at, Model.id))
+    return [_out(r) for r in rows]
 
 
 @router.get("/{endpoint_id}", response_model=EndpointOut)
-def read_endpoint(endpoint_id: str):
-    return _out(get_endpoint(endpoint_id))
+def read_endpoint(endpoint_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    return _out(owned(db, Model, endpoint_id, user, "Endpoint", Model.kind == "endpoint"))
 
 
 @router.delete("/{endpoint_id}", status_code=204)
-def delete_endpoint(endpoint_id: str):
-    get_endpoint(endpoint_id)
-    del _registry[endpoint_id]
+def delete_endpoint(endpoint_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    db.delete(owned(db, Model, endpoint_id, user, "Endpoint", Model.kind == "endpoint"))
+    db.commit()

@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from auth import current_user
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -8,7 +9,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-router = APIRouter(prefix="/metrics", tags=["metrics"])
+router = APIRouter(prefix="/metrics", tags=["metrics"], dependencies=[Depends(current_user)])
 
 
 class MetricsIn(BaseModel):

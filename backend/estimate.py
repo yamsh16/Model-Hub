@@ -2,13 +2,17 @@ import warnings as _warnings
 from typing import Literal
 
 import numpy as np
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from scipy.optimize import OptimizeWarning, curve_fit
+from sqlalchemy.orm import Session
 
+from auth import current_user
+from db import get_db
 from logs import get_log
+from models import User
 
-router = APIRouter(prefix="/logs", tags=["estimate"])
+router = APIRouter(prefix="/logs", tags=["estimate"], dependencies=[Depends(current_user)])
 
 MIN_POINTS = 6
 GOOD_POINTS = 10
@@ -168,8 +172,10 @@ def estimate_remaining(x: list[float], values: list[float | None], series: str, 
 
 
 @router.get("/{log_id}/estimate", response_model=EstimateOut)
-def estimate(log_id: str, series: str | None = None):
-    log = get_log(log_id)
+def estimate(
+    log_id: str, series: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    log = get_log(db, user, log_id)
     name = series or log["val_loss"] or log["train_loss"]
     if name is None:
         raise HTTPException(422, "This log has no loss column to fit")

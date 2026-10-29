@@ -9,11 +9,6 @@ from main import app
 client = TestClient(app)
 
 
-@pytest.fixture(autouse=True)
-def fresh():
-    logs._logs.clear()
-
-
 def expo(n, k=0.3, a=0.8, c=0.2):
     return list(range(n)), [float(c + a * np.exp(-k * i)) for i in range(n)]
 

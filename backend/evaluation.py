@@ -2,14 +2,18 @@ import random
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 import endpoints
+from auth import current_user
+from db import get_db
 from metrics import MetricsOut, compute_metrics
-from testsets import get_testset
+from models import User
+from testsets import class_labels, get_testset, table
 
-router = APIRouter(prefix="/testsets", tags=["evaluation"])
+router = APIRouter(prefix="/testsets", tags=["evaluation"], dependencies=[Depends(current_user)])
 
 DEFAULT_ROWS = 100
 MAX_EVAL_ROWS = 200  # runs synchronously inside the request until the task queue lands
@@ -51,16 +55,21 @@ def parse_label(reply: str, classes: list[str]) -> str | None:
 
 
 @router.post("/{testset_id}/evaluate", response_model=EvaluationOut)
-def evaluate(testset_id: str, body: EvaluateIn):
-    ts = get_testset(testset_id)
-    if ts["target"] is None:
+def evaluate(
+    testset_id: str, body: EvaluateIn, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    ts = get_testset(db, user, testset_id)
+    if ts.target is None:
         raise HTTPException(422, "Choose a target column before evaluating")
-    ep = endpoints.get_endpoint(body.endpoint_id)
+    # Both lookups are scoped to the signed-in user: you can't score your data with someone
+    # else's endpoint, or theirs with yours.
+    ep = endpoints.get_endpoint(db, user, body.endpoint_id)
     endpoints.check_url_is_public(ep["url"])  # re-check: DNS can change after registration
 
-    header, classes = ts["header"], list(ts["classes"])
-    t_idx = header.index(ts["target"])
-    rows = ts["rows"]
+    header, all_rows = table(ts)
+    classes = class_labels(ts)
+    t_idx = header.index(ts.target)
+    rows = all_rows
     sampled = len(rows) > body.limit
     if sampled:
         rows = random.Random(0).sample(rows, body.limit)  # fixed seed: reruns score the same rows
@@ -96,10 +105,11 @@ def evaluate(testset_id: str, body: EvaluateIn):
     m = compute_metrics(y_true, y_pred, classes=labels)
     result = EvaluationOut(
         **m.model_dump(),
-        total_rows=len(ts["rows"]),
+        total_rows=len(all_rows),
         sampled=sampled,
         unparsed=unparsed,
-        target=ts["target"],
+        target=ts.target,
     )
-    ts["evaluation"] = result.model_dump()  # the readiness score reads this
+    ts.evaluation = result.model_dump()  # the readiness score reads this
+    db.commit()
     return result

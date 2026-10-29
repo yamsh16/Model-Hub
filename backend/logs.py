@@ -4,19 +4,21 @@ import uuid
 from urllib.parse import quote
 
 import httpx
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 import endpoints
+from auth import current_user
+from db import get_db
+from models import TrainingLog, User
+from ownership import owned
 from testsets import _read_csv
 
-router = APIRouter(prefix="/logs", tags=["logs"])
+router = APIRouter(prefix="/logs", tags=["logs"], dependencies=[Depends(current_user)])
 
 MLFLOW_TIMEOUT_SECONDS = 15.0
 MAX_MLFLOW_METRICS = 12  # history is fetched once per metric, so bound the fan-out
-
-# In-memory store until the PostgreSQL schema lands. Keyed by log id.
-_logs: dict[str, dict] = {}
 
 # Column names (lower-cased) that mean "x axis". Covers Keras/PyTorch Lightning CSV loggers,
 # HF Trainer, and W&B's exported "Step"/"_step".
@@ -68,21 +70,29 @@ def detect_loss_roles(names: list[str]) -> tuple[str | None, str | None]:
     return (train[0] if train else None, val[0] if val else None)
 
 
-def _store(filename: str, source: str, x_name: str, x: list[float],
+def _store(db: Session, user: User, filename: str, source: str, x_name: str, x: list[float],
            series: dict[str, list[float | None]]) -> LogOut:
     if not series:
         raise HTTPException(422, "No numeric columns found in the training log")
     train, val = detect_loss_roles(list(series))
-    log = LogOut(
-        id=uuid.uuid4().hex, filename=filename, source=source, x_name=x_name, x=x,
-        series=series, train_loss=train, val_loss=val,
+    row = TrainingLog(
+        user_id=user.id, filename=filename, source=source, x_name=x_name, x=x, series=series,
+        train_loss=train, val_loss=val,
     )
-    _logs[log.id] = log.model_dump()
-    return log
+    db.add(row)
+    db.commit()
+    return _out(row)
+
+
+def _out(row: TrainingLog) -> LogOut:
+    return LogOut(
+        id=str(row.id), filename=row.filename, source=row.source, x_name=row.x_name, x=row.x,
+        series=row.series, train_loss=row.train_loss, val_loss=row.val_loss,
+    )
 
 
 @router.post("", response_model=LogOut, status_code=201)
-async def upload_log(file: UploadFile):
+async def upload_log(file: UploadFile, user: User = Depends(current_user), db: Session = Depends(get_db)):
     header, rows = await _read_csv(file)
     x_col = find_x_column(header)
     columns = {h: [to_float(r[i]) for r in rows] for i, h in enumerate(header)}
@@ -97,7 +107,7 @@ async def upload_log(file: UploadFile):
 
     # Keep only columns with at least one number; text columns (run names, timestamps) drop out.
     series = {name: vals for name, vals in columns.items() if any(v is not None for v in vals)}
-    return _store(file.filename or "training-log.csv", "csv", x_name, xs, series)
+    return _store(db, user, file.filename or "training-log.csv", "csv", x_name, xs, series)
 
 
 def _mlflow_get(base: str, path: str, params: dict, token: str | None) -> dict:
@@ -124,7 +134,7 @@ def _mlflow_get(base: str, path: str, params: dict, token: str | None) -> dict:
 
 
 @router.post("/mlflow", response_model=LogOut, status_code=201)
-def import_mlflow(body: MlflowIn):
+def import_mlflow(body: MlflowIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Import a run's metric histories from an MLflow tracking server (REST API)."""
     base = body.tracking_uri.strip().rstrip("/")
     if not re.match(r"^https?://", base):
@@ -161,16 +171,15 @@ def import_mlflow(body: MlflowIn):
 
     steps = sorted({s for pts in by_key.values() for s in pts})
     series = {k: [pts.get(s) for s in steps] for k, pts in by_key.items()}
-    return _store(f"mlflow:{quote(body.run_id)}", "mlflow", "step", [float(s) for s in steps], series)
+    return _store(db, user, f"mlflow:{quote(body.run_id)}", "mlflow", "step",
+                  [float(s) for s in steps], series)
 
 
-def get_log(log_id: str) -> dict:
-    log = _logs.get(log_id)
-    if log is None:
-        raise HTTPException(404, "Training log not found")
-    return log
+def get_log(db: Session, user: User, log_id: str) -> dict:
+    """The signed-in user's log as a plain dict (used by the estimate and readiness routes)."""
+    return _out(owned(db, TrainingLog, log_id, user, "Training log")).model_dump()
 
 
 @router.get("/{log_id}", response_model=LogOut)
-def read_log(log_id: str):
-    return LogOut(**get_log(log_id))
+def read_log(log_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    return _out(owned(db, TrainingLog, log_id, user, "Training log"))

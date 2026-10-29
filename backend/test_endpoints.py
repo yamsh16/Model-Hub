@@ -17,7 +17,6 @@ PAYLOAD = {
 
 @pytest.fixture(autouse=True)
 def fresh_registry(monkeypatch):
-    endpoints._registry.clear()
     monkeypatch.setattr(endpoints, "check_url_is_public", lambda url: None)
     monkeypatch.setattr(endpoints, "probe", lambda url, model, key: 42)
 

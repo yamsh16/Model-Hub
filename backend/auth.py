@@ -1,7 +1,5 @@
 import logging
-import os
 import re
-import secrets
 import threading
 import time
 import uuid
@@ -16,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+import config
 from db import get_db
 from models import User
 
@@ -34,11 +33,7 @@ _hasher = PasswordHasher()
 # "wrong password" and the response timing doesn't reveal which emails are registered.
 _DUMMY_HASH = _hasher.hash("not-a-real-password")
 
-_secret = os.environ.get("JWT_SECRET")
-if not _secret:
-    # Dev convenience: tokens stop working when the server restarts. Set JWT_SECRET in production.
-    _secret = secrets.token_urlsafe(48)
-    log.warning("JWT_SECRET is not set; using a random per-process key (sessions end on restart)")
+_secret = config.jwt_secret()
 
 
 class Credentials(BaseModel):

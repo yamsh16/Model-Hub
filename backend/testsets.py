@@ -1,20 +1,21 @@
 import csv
 import io
-import uuid
 from collections import Counter
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-router = APIRouter(prefix="/testsets", tags=["testsets"])
+from auth import current_user
+from db import get_db
+from models import TestSet, User
+from ownership import owned
+
+router = APIRouter(prefix="/testsets", tags=["testsets"], dependencies=[Depends(current_user)])
 
 MAX_BYTES = 5 * 1024 * 1024
 MAX_ROWS = 50_000
 MAX_CLASSES = 50  # a target with more distinct values than this looks like regression, not classification
-
-# In-memory store until the PostgreSQL schema lands. Keyed by test set id.
-_testsets: dict[str, dict] = {}
-
 
 class ColumnInfo(BaseModel):
     name: str
@@ -44,14 +45,7 @@ class LeakageOut(BaseModel):
     warning: str | None
 
 
-async def _read_csv(file: UploadFile) -> tuple[list[str], list[tuple[str, ...]]]:
-    data = await file.read(MAX_BYTES + 1)
-    if len(data) > MAX_BYTES:
-        raise HTTPException(413, f"File is larger than {MAX_BYTES // (1024 * 1024)} MB")
-    try:
-        text = data.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        raise HTTPException(422, "File is not valid UTF-8 text")
+def parse_csv_text(text: str) -> tuple[list[str], list[tuple[str, ...]]]:
     try:
         reader = csv.reader(io.StringIO(text))
         header = next(reader, None)
@@ -78,60 +72,81 @@ async def _read_csv(file: UploadFile) -> tuple[list[str], list[tuple[str, ...]]]
     return header, rows
 
 
-def get_testset(testset_id: str) -> dict:
-    ts = _testsets.get(testset_id)
-    if ts is None:
-        raise HTTPException(404, "Test set not found")
-    return ts
+async def read_upload(file: UploadFile) -> tuple[str, list[str], list[tuple[str, ...]]]:
+    """Read and validate an uploaded CSV; returns (text, header, rows)."""
+    data = await file.read(MAX_BYTES + 1)
+    if len(data) > MAX_BYTES:
+        raise HTTPException(413, f"File is larger than {MAX_BYTES // (1024 * 1024)} MB")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(422, "File is not valid UTF-8 text")
+    header, rows = parse_csv_text(text)
+    return text, header, rows
 
 
-def _out(ts: dict) -> TestSetOut:
-    return TestSetOut(
-        id=ts["id"],
-        filename=ts["filename"],
-        rows=len(ts["rows"]),
-        columns=ts["columns"],
-        target=ts["target"],
-        classes=ts["classes"],
-    )
+async def _read_csv(file: UploadFile) -> tuple[list[str], list[tuple[str, ...]]]:
+    _, header, rows = await read_upload(file)
+    return header, rows
 
 
-@router.post("", response_model=TestSetOut, status_code=201)
-async def upload_testset(file: UploadFile):
-    header, rows = await _read_csv(file)
+def get_testset(db: Session, user: User, testset_id: str) -> TestSet:
+    return owned(db, TestSet, testset_id, user, "Test set")
+
+
+def table(ts: TestSet) -> tuple[list[str], list[tuple[str, ...]]]:
+    """The stored CSV as (header, rows). Re-parsed per request: it is capped at 5 MB."""
+    return parse_csv_text(ts.csv_text)
+
+
+def class_labels(ts: TestSet) -> list[str]:
+    return [label for label, _ in ts.classes or []]  # stored as ordered [label, count] pairs
+
+
+def _out(ts: TestSet) -> TestSetOut:
+    header, rows = table(ts)
     columns = []
     for i, name in enumerate(header):
         values = [r[i] for r in rows]
         columns.append(
             ColumnInfo(name=name, unique=len(set(values)), missing=sum(1 for v in values if v == ""))
         )
-    ts = {
-        "id": uuid.uuid4().hex,
-        "filename": file.filename or "testset.csv",
-        "header": header,
-        "rows": rows,
-        "columns": columns,
-        "target": None,
-        "classes": None,
-        "evaluation": None,
-        "leakage": None,
-    }
-    _testsets[ts["id"]] = ts
+    return TestSetOut(
+        id=str(ts.id),
+        filename=ts.filename,
+        rows=len(rows),
+        columns=columns,
+        target=ts.target,
+        classes={label: n for label, n in ts.classes} if ts.classes else None,
+    )
+
+
+@router.post("", response_model=TestSetOut, status_code=201)
+async def upload_testset(
+    file: UploadFile, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    text, _, _ = await read_upload(file)
+    ts = TestSet(user_id=user.id, filename=file.filename or "testset.csv", csv_text=text)
+    db.add(ts)
+    db.commit()
     return _out(ts)
 
 
 @router.get("/{testset_id}", response_model=TestSetOut)
-def read_testset(testset_id: str):
-    return _out(get_testset(testset_id))
+def read_testset(testset_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    return _out(get_testset(db, user, testset_id))
 
 
 @router.put("/{testset_id}/target", response_model=TestSetOut)
-def set_target(testset_id: str, body: TargetIn):
-    ts = get_testset(testset_id)
-    if body.column not in ts["header"]:
+def set_target(
+    testset_id: str, body: TargetIn, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    ts = get_testset(db, user, testset_id)
+    header, rows = table(ts)
+    if body.column not in header:
         raise HTTPException(422, f"No column named '{body.column}'")
-    idx = ts["header"].index(body.column)
-    labels = [r[idx] for r in ts["rows"]]
+    idx = header.index(body.column)
+    labels = [r[idx] for r in rows]
     if "" in labels:
         raise HTTPException(422, "Target column has missing values; fill or remove those rows")
     counts = Counter(labels)
@@ -143,22 +158,28 @@ def set_target(testset_id: str, body: TargetIn):
             f"Target column has {len(counts)} distinct values; "
             "only classification targets are supported",
         )
-    ts["target"] = body.column
-    ts["classes"] = dict(counts.most_common())
-    ts["evaluation"] = None  # scores were for the previous target
+    ts.target = body.column
+    ts.classes = [[label, n] for label, n in counts.most_common()]  # a list: JSONB would reorder dict keys
+    ts.evaluation = None  # scores were for the previous target
+    db.commit()
     return _out(ts)
 
 
 @router.post("/{testset_id}/leakage", response_model=LeakageOut)
-async def check_leakage(testset_id: str, train_file: UploadFile):
+async def check_leakage(
+    testset_id: str,
+    train_file: UploadFile,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     """Compare a training CSV against the test set; shared rows mean the metrics will be inflated."""
-    ts = get_testset(testset_id)
+    ts = get_testset(db, user, testset_id)
+    header, test_rows = table(ts)
     train_header, train_rows = await _read_csv(train_file)
-    if train_header != ts["header"]:
+    if train_header != header:
         raise HTTPException(422, "Training CSV must have the same columns as the test set")
 
     train_set = set(train_rows)
-    test_rows = ts["rows"]
     overlap = sum(1 for r in test_rows if r in train_set)
     duplicates = len(test_rows) - len(set(test_rows))
     pct = round(100 * overlap / len(test_rows), 1)
@@ -177,5 +198,6 @@ async def check_leakage(testset_id: str, train_file: UploadFile):
         duplicate_test_rows=duplicates,
         warning=warning,
     )
-    ts["leakage"] = result.model_dump()
+    ts.leakage = result.model_dump()
+    db.commit()
     return result

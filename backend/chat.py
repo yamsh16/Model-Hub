@@ -2,13 +2,17 @@ import json
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 import endpoints
+from auth import current_user
+from db import get_db
+from models import User
 
-router = APIRouter(prefix="/endpoints", tags=["chat"])
+router = APIRouter(prefix="/endpoints", tags=["chat"], dependencies=[Depends(current_user)])
 
 MAX_MESSAGES = 50
 MAX_CONTENT_CHARS = 8000
@@ -62,8 +66,8 @@ def _stream_reply(upstream: httpx.Response):
 
 
 @router.post("/{endpoint_id}/chat")
-def chat(endpoint_id: str, body: ChatIn):
-    ep = endpoints.get_endpoint(endpoint_id)
+def chat(endpoint_id: str, body: ChatIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    ep = endpoints.get_endpoint(db, user, endpoint_id)
     endpoints.check_url_is_public(ep["url"])  # re-check: DNS can change after registration
     messages = [m.model_dump() for m in body.messages]
 

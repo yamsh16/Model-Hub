@@ -1,11 +1,15 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from auth import current_user
+from db import get_db
 from estimate import EstimateOut, estimate_remaining
 from logs import get_log
+from models import User
 from testsets import get_testset
 
-router = APIRouter(prefix="/readiness", tags=["readiness"])
+router = APIRouter(prefix="/readiness", tags=["readiness"], dependencies=[Depends(current_user)])
 
 # How much each signal counts. Missing signals are left out and the rest are re-weighted,
 # and the response says how much of the total weight was actually available.
@@ -68,13 +72,18 @@ def _convergence(est: EstimateOut) -> tuple[float, str] | None:
 
 
 @router.get("", response_model=ReadinessOut)
-def readiness(testset_id: str | None = None, log_id: str | None = None):
+def readiness(
+    testset_id: str | None = None,
+    log_id: str | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     if testset_id is None and log_id is None:
         raise HTTPException(422, "Give a testset_id, a log_id, or both")
-    ts = get_testset(testset_id) if testset_id else None
-    log = get_log(log_id) if log_id else None
-    ev = ts["evaluation"] if ts else None
-    leak = ts["leakage"] if ts else None
+    ts = get_testset(db, user, testset_id) if testset_id else None
+    log = get_log(db, user, log_id) if log_id else None
+    ev = ts.evaluation if ts else None
+    leak = ts.leakage if ts else None
 
     comps: list[Component] = []
     advice: list[Advice] = []

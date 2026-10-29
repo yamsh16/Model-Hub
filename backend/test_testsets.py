@@ -9,11 +9,6 @@ client = TestClient(app)
 TEST_CSV = "a,b,label\n1,2,cat\n3,4,dog\n5,6,cat\n5,6,cat\n"
 
 
-@pytest.fixture(autouse=True)
-def fresh_store():
-    testsets._testsets.clear()
-
-
 def upload(content=TEST_CSV, name="test.csv"):
     return client.post("/testsets", files={"file": (name, content, "text/csv")})
 
