@@ -27,6 +27,7 @@ MAX_PASSWORD = 128  # bounds hashing work; argon2 is deliberately slow
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 MAX_FAILURES = 5  # failed logins per email+IP ...
 FAILURE_WINDOW_SECONDS = 15 * 60  # ... within this window, then 429
+MAX_TRACKED_KEYS = 10_000  # bounds memory if someone sprays random emails
 
 _hasher = PasswordHasher()
 # Verified against when the email is unknown, so "no such user" costs the same time as
@@ -75,6 +76,12 @@ class LoginThrottle:
 
     def record_failure(self, key: str) -> None:
         with self._lock:
+            if len(self._fails) >= MAX_TRACKED_KEYS:
+                for stale in [k for k in self._fails if not self._recent(k)]:
+                    self._fails.pop(stale, None)
+                if len(self._fails) >= MAX_TRACKED_KEYS:  # all still fresh: forget the oldest
+                    oldest = min(self._fails, key=lambda k: self._fails[k][-1])
+                    self._fails.pop(oldest)
             self._recent(key)
             self._fails.setdefault(key, []).append(self.clock())
 

@@ -3,8 +3,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 import endpoints
-import logs
-import testsets
 from main import app
 
 client = TestClient(app)

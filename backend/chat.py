@@ -68,6 +68,7 @@ def _stream_reply(upstream: httpx.Response):
 @router.post("/{endpoint_id}/chat")
 def chat(endpoint_id: str, body: ChatIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     ep = endpoints.get_endpoint(db, user, endpoint_id)
+    db.commit()  # end the read transaction: don't hold a pooled connection while the model replies
     endpoints.check_url_is_public(ep["url"])  # re-check: DNS can change after registration
     messages = [m.model_dump() for m in body.messages]
 

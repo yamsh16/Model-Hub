@@ -19,6 +19,10 @@
 }
 
 /* ===== Base ===== */
+
+/* Author display rules (e.g. .btn { display: inline-flex }) beat the browser's [hidden] rule,
+   which left "hidden" buttons visible. Make hidden always win. */
+[hidden] { display: none !important; }
 * { box-sizing: border-box; }
 
 html { scroll-behavior: smooth; }
@@ -353,3 +357,6 @@ input[type="text"]:focus { outline: 2px solid var(--teal); outline-offset: 1px; 
 .auth-dialog h2 { margin-bottom: 18px; }
 .auth-dialog input { width: 100%; }
 .auth-actions { margin-top: 18px; flex-wrap: wrap; gap: 8px; }
+
+/* Inputs sharing a row with a button should fill the space (e.g. API key + Attach). */
+.inline-form .row input { flex: 1; min-width: 0; }

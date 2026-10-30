@@ -249,7 +249,7 @@ endpointForm.addEventListener("submit", async (e) => {
   }
 });
 
-loadEndpoints();
+if (authToken) loadEndpoints(); // signed out: nothing to load (the API would answer 401)
 
 // ----- 2b. Test set: CSV upload, target column, leakage check -----
 const tsFile = document.getElementById("ts-file");
@@ -606,7 +606,34 @@ function renderEstimate(est) {
   box.hidden = false;
 }
 
+// Training progress = how far along the curve is before gains flatten (from the estimate).
+function renderProgress(est) {
+  const value = document.getElementById("stat-progress");
+  const note = document.getElementById("stat-progress-note");
+  const fill = document.getElementById("progress-fill");
+  let fraction = null;
+  if (est && est.status === "already_flat") fraction = 1;
+  else if (est && est.status === "estimate" && est.last_x + est.remaining > 0) {
+    fraction = est.last_x / (est.last_x + est.remaining);
+  }
+  if (fraction === null) {
+    value.textContent = "–";
+    fill.style.width = "0%";
+    note.textContent = est ? "Can't tell from this log" : "Load a training log";
+    return;
+  }
+  value.textContent = `${Math.round(fraction * 100)}%`;
+  fill.style.width = `${Math.round(fraction * 100)}%`;
+  note.textContent =
+    fraction === 1 ? `${est.series} has levelled off` : `${est.x_name} ${fmt(est.last_x)} of about ${fmt(est.last_x + est.remaining)}`;
+}
+
 function renderReadiness(r) {
+  if (r.score !== null || r.estimate) {
+    document.getElementById("report-eyebrow").textContent = "YOUR REPORT";
+    document.getElementById("report-pill").hidden = true;
+  }
+  renderProgress(r.estimate);
   document.getElementById("stat-score").textContent = r.score === null ? "– / 100" : `${r.score} / 100`;
   document.getElementById("stat-score-note").textContent = r.verdict;
   renderEstimate(r.estimate);

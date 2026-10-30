@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Model Hub</title>
+  <link rel="icon" href="data:,">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -120,18 +121,18 @@
     <!-- ===== Sample report ===== -->
     <section class="section" id="report">
       <div class="container">
-        <p class="eyebrow eyebrow-muted">SAMPLE REPORT</p>
+        <p class="eyebrow eyebrow-muted" id="report-eyebrow">SAMPLE REPORT</p>
         <div class="report-head">
           <h2>Everything about your model, in one view</h2>
-          <span class="pill mono">model-name-v1 · [MODEL TYPE]</span>
+          <span class="pill mono" id="report-pill">model-name-v1 · [MODEL TYPE]</span>
         </div>
 
         <div class="stats">
           <div class="stat">
             <p class="stat-label">Training progress</p>
-            <p class="stat-value">[00]%</p>
-            <div class="progress"><div class="progress-fill" style="width: 70%"></div></div>
-            <p class="stat-note">[N] of [N] epochs completed</p>
+            <p class="stat-value" id="stat-progress">[00]%</p>
+            <div class="progress"><div class="progress-fill" id="progress-fill" style="width: 70%"></div></div>
+            <p class="stat-note" id="stat-progress-note">[N] of [N] epochs completed</p>
           </div>
           <div class="stat">
             <p class="stat-label">Accuracy</p>

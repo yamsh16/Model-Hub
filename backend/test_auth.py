@@ -122,3 +122,13 @@ def test_token_dies_with_the_account(database):
         s.delete(s.query(models.User).one())
         s.commit()
     assert client.get("/auth/me", headers=bearer(body["access_token"])).status_code == 401
+
+
+def test_throttle_memory_is_bounded(monkeypatch):
+    monkeypatch.setattr(auth, "MAX_TRACKED_KEYS", 5)
+    t = auth.LoginThrottle()
+    for i in range(50):
+        t.record_failure(f"spray{i}@x.com|1.2.3.4")
+    assert len(t._fails) <= 5
+    t.record_failure("victim@x.com|1.2.3.4")
+    assert not t.blocked("victim@x.com|1.2.3.4") and len(t._fails) <= 5

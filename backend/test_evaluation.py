@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 
 import endpoints
 import evaluation
-import testsets
 from main import app
 
 client = TestClient(app)
@@ -125,3 +124,27 @@ def test_chat_completion_parses_openai_reply(monkeypatch):
     with pytest.raises(HTTPException) as e:
         endpoints.chat_completion({"url": "https://x", "model": "m", "api_key": None}, "hi")
     assert e.value.status_code == 502
+
+
+def test_database_connection_is_released_before_scoring(monkeypatch):
+    import db as dbmod
+
+    sessions = []
+    real_override = app.dependency_overrides[dbmod.get_db]
+
+    def spy():
+        for s in real_override():
+            sessions.append(s)
+            yield s
+
+    app.dependency_overrides[dbmod.get_db] = spy
+    seen = []
+
+    def answer(ep, prompt, **k):
+        seen.append(sessions[-1].in_transaction())
+        return "pos"
+
+    monkeypatch.setattr(endpoints, "chat_completion", answer)
+    tid, eid = make()
+    assert client.post(f"/testsets/{tid}/evaluate", json={"endpoint_id": eid}).status_code == 200
+    assert seen and not any(seen)

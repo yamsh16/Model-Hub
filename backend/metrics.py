@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from auth import current_user
+from pydantic import BaseModel, Field
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -9,15 +8,19 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from auth import current_user
+
+MAX_SAMPLES = 100_000
+
 router = APIRouter(prefix="/metrics", tags=["metrics"], dependencies=[Depends(current_user)])
 
 
 class MetricsIn(BaseModel):
-    y_true: list[str]
-    y_pred: list[str]
+    y_true: list[str] = Field(max_length=MAX_SAMPLES)
+    y_pred: list[str] = Field(max_length=MAX_SAMPLES)
     # Optional class probabilities, one row per sample, columns ordered like `classes`.
     # Endpoints that only return a label can't supply this, so ROC-AUC is then null.
-    y_proba: list[list[float]] | None = None
+    y_proba: list[list[float]] | None = Field(default=None, max_length=MAX_SAMPLES)
     classes: list[str] | None = None
 
 

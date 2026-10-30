@@ -2,12 +2,11 @@ import ipaddress
 import os
 import socket
 import time
-import uuid
 from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,10 +22,11 @@ PROBE_TIMEOUT_SECONDS = 10.0
 EVAL_TIMEOUT_SECONDS = 30.0
 
 class EndpointIn(BaseModel):
-    name: str
+    # Bounds match the database columns; longer values would be a 500 on PostgreSQL.
+    name: str = Field(min_length=1, max_length=200)
     url: HttpUrl  # OpenAI-compatible chat completions URL
-    model: str
-    api_key: str | None = None
+    model: str = Field(min_length=1, max_length=200)
+    api_key: str | None = Field(default=None, max_length=1000)
 
 
 class EndpointOut(BaseModel):

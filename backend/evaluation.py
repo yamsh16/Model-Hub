@@ -66,6 +66,7 @@ def evaluate(
     ep = endpoints.get_endpoint(db, user, body.endpoint_id)
     endpoints.check_url_is_public(ep["url"])  # re-check: DNS can change after registration
 
+    db.commit()  # release the pooled connection; scoring below can take minutes
     header, all_rows = table(ts)
     classes = class_labels(ts)
     t_idx = header.index(ts.target)

@@ -61,6 +61,7 @@ pip install -r requirements.txt
 python -m alembic upgrade head          # create/upgrade the tables
 uvicorn main:app --reload --port 8001   # :8000 is taken by the frontend
 pytest                                  # schema tests also run on Postgres when it is up
+TEST_ON_POSTGRES=1 pytest               # the whole suite on real Postgres (slower, ~2 min)
 ```
 
 **Sign-in and isolation:** every route except `/health` and `/auth/register|login` requires a
@@ -97,7 +98,9 @@ the models and migrations disagree.
 7. **Readiness:** the score and the advice list update after each step. Without an evaluation
    there is no score; with only some signals, the verdict says "based on N of 5".
 
-Known limits: evaluation runs inside the request; Weights & Biases is supported through its CSV export
+Known limits: after a page reload the test set and training log you were working on are not
+re-listed (they are saved, but the page only keeps the attached models and chat history);
+evaluation runs inside the request; Weights & Biases is supported through its CSV export
 (Run → Export), not a direct API import.
 
 ## Target stack
@@ -201,7 +204,7 @@ the end date, and don't pull work forward.
 - [x] Day 18 (Oct 27): PostgreSQL schema for users / models / reports / chat
 - [x] Day 19 (Oct 28): sign-in / auth
 - [x] Day 20 (Oct 29): per-user isolation + isolation tests
-- [ ] Day 21 (Oct 30): buffer — tests, bug fixes
+- [x] Day 21 (Oct 30): buffer — tests, bug fixes
 
 **Phase 4 — frontend migration (Days 22–24)**
 

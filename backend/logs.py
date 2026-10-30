@@ -1,6 +1,5 @@
 import math
 import re
-import uuid
 from urllib.parse import quote
 
 import httpx
@@ -13,7 +12,7 @@ from auth import current_user
 from db import get_db
 from models import TrainingLog, User
 from ownership import owned
-from testsets import _read_csv
+from testsets import _read_csv, safe_filename
 
 router = APIRouter(prefix="/logs", tags=["logs"], dependencies=[Depends(current_user)])
 
@@ -74,6 +73,8 @@ def _store(db: Session, user: User, filename: str, source: str, x_name: str, x: 
            series: dict[str, list[float | None]]) -> LogOut:
     if not series:
         raise HTTPException(422, "No numeric columns found in the training log")
+    if any("\x00" in name or len(name) > 255 for name in series):  # e.g. odd metric keys from MLflow
+        raise HTTPException(422, "Metric names must be at most 255 characters and contain no NUL")
     train, val = detect_loss_roles(list(series))
     row = TrainingLog(
         user_id=user.id, filename=filename, source=source, x_name=x_name, x=x, series=series,
@@ -107,7 +108,7 @@ async def upload_log(file: UploadFile, user: User = Depends(current_user), db: S
 
     # Keep only columns with at least one number; text columns (run names, timestamps) drop out.
     series = {name: vals for name, vals in columns.items() if any(v is not None for v in vals)}
-    return _store(db, user, file.filename or "training-log.csv", "csv", x_name, xs, series)
+    return _store(db, user, safe_filename(file.filename, "training-log.csv"), "csv", x_name, xs, series)
 
 
 def _mlflow_get(base: str, path: str, params: dict, token: str | None) -> dict:

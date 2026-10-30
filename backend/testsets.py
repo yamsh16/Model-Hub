@@ -15,6 +15,7 @@ router = APIRouter(prefix="/testsets", tags=["testsets"], dependencies=[Depends(
 
 MAX_BYTES = 5 * 1024 * 1024
 MAX_ROWS = 50_000
+MAX_NAME_CHARS = 255  # column names and filenames; matches the database columns
 MAX_CLASSES = 50  # a target with more distinct values than this looks like regression, not classification
 
 class ColumnInfo(BaseModel):
@@ -52,6 +53,8 @@ def parse_csv_text(text: str) -> tuple[list[str], list[tuple[str, ...]]]:
         if not header or not any(h.strip() for h in header):
             raise HTTPException(422, "CSV is empty or has no header row")
         header = [h.strip() for h in header]
+        if any(len(h) > MAX_NAME_CHARS for h in header):
+            raise HTTPException(422, f"Column names are limited to {MAX_NAME_CHARS} characters")
         if len(set(header)) != len(header):
             raise HTTPException(422, "CSV has duplicate column names")
         rows = []
@@ -81,8 +84,16 @@ async def read_upload(file: UploadFile) -> tuple[str, list[str], list[tuple[str,
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError:
         raise HTTPException(422, "File is not valid UTF-8 text")
+    if "\x00" in text:  # valid UTF-8, but PostgreSQL text and JSONB cannot store it
+        raise HTTPException(422, "File contains NUL characters; is it really a CSV?")
     header, rows = parse_csv_text(text)
     return text, header, rows
+
+
+def safe_filename(name: str | None, default: str) -> str:
+    """The base name of an uploaded file, shortened to fit the database column."""
+    base = (name or "").replace("\\", "/").rsplit("/", 1)[-1].replace("\x00", "").strip()
+    return (base or default)[:MAX_NAME_CHARS]
 
 
 async def _read_csv(file: UploadFile) -> tuple[list[str], list[tuple[str, ...]]]:
@@ -126,7 +137,7 @@ async def upload_testset(
     file: UploadFile, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     text, _, _ = await read_upload(file)
-    ts = TestSet(user_id=user.id, filename=file.filename or "testset.csv", csv_text=text)
+    ts = TestSet(user_id=user.id, filename=safe_filename(file.filename, "testset.csv"), csv_text=text)
     db.add(ts)
     db.commit()
     return _out(ts)

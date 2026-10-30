@@ -141,3 +141,27 @@ def test_open_chat_stream_checks_status_and_closes():
     assert e.value.status_code == 502
     headers, body = endpoints._chat_request(ep, MSGS, True, None, None)
     assert body["stream"] is True and "max_tokens" not in body and "Authorization" not in headers
+
+
+def test_database_connection_is_released_before_calling_the_model(monkeypatch, eid):
+    """A slow model must not pin a pooled connection (it would starve other requests)."""
+    import db as dbmod
+
+    sessions = []
+    real_override = app.dependency_overrides[dbmod.get_db]
+
+    def spy():
+        for s in real_override():
+            sessions.append(s)
+            yield s
+
+    app.dependency_overrides[dbmod.get_db] = spy
+    seen = {}
+
+    def slow_model(ep, messages, **k):
+        seen["in_transaction"] = sessions[-1].in_transaction()
+        return "ok"
+
+    monkeypatch.setattr(endpoints, "chat_messages", slow_model)
+    assert client.post(f"/endpoints/{eid}/chat", json={"messages": MSGS}).status_code == 200
+    assert seen["in_transaction"] is False

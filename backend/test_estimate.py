@@ -3,7 +3,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 import estimate
-import logs
 from main import app
 
 client = TestClient(app)
