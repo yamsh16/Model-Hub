@@ -22,10 +22,15 @@ app.include_router(logs_router)
 app.include_router(estimate_router)
 app.include_router(readiness_router)
 
-# Allow the static frontend (python -m http.server 8000) to call the API in development.
+# Allow the frontends (static site on :8000, Next.js app on :3000) to call the API in development.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
+    allow_origins=[
+        "http://localhost:8000",  # the static site
+        "http://127.0.0.1:8000",
+        "http://localhost:3000",  # the Next.js app (web/)
+        "http://127.0.0.1:3000",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )

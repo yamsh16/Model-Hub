@@ -25,7 +25,9 @@ cd frontend
 python -m http.server 8000
 ```
 
-Then open http://localhost:8000. The backend (below) must be running on port 8001 for the
+Then open http://localhost:8000. (The new Next.js app in `web/` is being built to replace this
+static site; run it with `cd web && npm install && npm run dev` and open http://localhost:3000.
+Until Day 24 the static site is the working app.) The backend (below) must be running on port 8001 for the
 attach form to work.
 
 ```
@@ -33,6 +35,7 @@ frontend/
   index.html   page structure
   styles.css   all styling (colours and fonts are set at the top)
   main.js      endpoint form, test set + evaluation, loss chart + log import, streaming chat
+web/               Next.js + Tailwind app replacing the static site (see web/README.md)
 backend/
   main.py          FastAPI app (GET /health)
   endpoints.py     register / list / get / delete API endpoints (POST /endpoints probes the URL)
@@ -208,7 +211,7 @@ the end date, and don't pull work forward.
 
 **Phase 4 — frontend migration (Days 22–24)**
 
-- [ ] Day 22 (Oct 31): Next.js + Tailwind scaffold
+- [x] Day 22 (Oct 31): Next.js + Tailwind scaffold
 - [ ] Day 23 (Nov 1): migrate landing, connect, and report pages
 - [ ] Day 24 (Nov 2): migrate chat and charts; retire the static frontend
 

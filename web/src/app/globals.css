@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+/* Design tokens, carried over from the static site's styles.css so the migrated pages look
+   the same. Each one becomes a Tailwind utility: bg-ink, text-muted, border-line, ... */
+@theme {
+  --color-ink: #0f1b2b;
+  --color-teal: #0f7b7b;
+  --color-teal-soft: #e3f2f1;
+  --color-orange: #c2610f;
+  --color-grey-bg: #f3f4f6;
+  --color-card: #f2f3f5;
+  --color-line: #d9dde3;
+  --color-muted: #4a5565;
+
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --radius-md: 12px;
+  --radius-lg: 18px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #fff;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+
+/* Author display rules (e.g. a button's inline-flex) beat the browser's [hidden] rule. */
+[hidden] {
+  display: none !important;
+}
