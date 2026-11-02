@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import AuthProvider from "@/components/AuthProvider";
 import SiteHeader from "@/components/SiteHeader";
+import WorkspaceProvider from "@/components/WorkspaceProvider";
 import "./globals.css";
 
 const plexSans = IBM_Plex_Sans({
@@ -25,8 +27,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${plexSans.variable} ${plexMono.variable} antialiased`}>
       <body className="flex min-h-screen flex-col">
-        <SiteHeader />
-        <main className="flex-1">{children}</main>
+        <AuthProvider>
+          <WorkspaceProvider>
+            <SiteHeader />
+            <main className="flex-1">{children}</main>
+          </WorkspaceProvider>
+        </AuthProvider>
       </body>
     </html>
   );

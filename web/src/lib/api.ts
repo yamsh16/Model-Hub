@@ -6,6 +6,9 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:80
 
 const TOKEN_KEY = "modelhub-token";
 
+/** Fired on window when the server rejects the saved token. */
+export const SIGNED_OUT_EVENT = "modelhub:signed-out";
+
 export function getToken(): string | null {
   try {
     return localStorage.getItem(TOKEN_KEY);
@@ -29,7 +32,10 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
-  if (res.status === 401 && token && !path.startsWith("/auth/")) setToken(null);
+  if (res.status === 401 && token && !path.startsWith("/auth/")) {
+    setToken(null);
+    window.dispatchEvent(new Event(SIGNED_OUT_EVENT)); // lets the sign-in state in React catch up
+  }
   return res;
 }
 

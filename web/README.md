@@ -20,8 +20,35 @@ its CORS settings (`../backend/main.py`).
 Next.js here is a recent major version with changes from older releases: check
 `node_modules/next/dist/docs/` before writing framework code (see `AGENTS.md`).
 
+## Pages
+
+| Route      | What it is |
+|------------|------------|
+| `/`        | Landing: the pitch, "how it works", backend status |
+| `/connect` | Inputs: attach an endpoint, upload a test set + pick the target + leakage check + evaluate, load a training log |
+| `/report`  | Readiness score, accuracy, training progress / still needed, evaluation tables, advice |
+
+Pages are server-rendered shells; the parts that talk to the backend are client components.
+
+## How the pieces fit
+
 ```
-src/app/         routes and layout (page.tsx, layout.tsx, globals.css)
-src/components/  SiteHeader (static), ApiStatus (shows whether the backend is reachable)
-src/lib/api.ts   backend URL, bearer-token storage, apiFetch / apiJson
+src/app/                 routes and layout (page.tsx per route, layout.tsx wraps everything in the providers)
+src/components/
+  AuthProvider.tsx       who is signed in (context); sign in / register / sign out; restores a saved token
+  AuthControls.tsx       header buttons + the sign-in dialog
+  WorkspaceProvider.tsx  the test set, evaluation and training log the user has loaded (context,
+                         kept in sessionStorage so a reload keeps it; emptied when the account changes)
+  connect/               the three input panels on /connect
+  report/                the /report view
+  ui.tsx                 Button, Field, Status, Card, Panel, DataTable
+src/lib/
+  api.ts                 backend URL, bearer-token storage, apiFetch / apiJson
+  types.ts               shapes of the backend's JSON
+  report.ts              wording for the "training still needed" and "progress" cards
+  format.ts              pct / fmt / errorMessage
+  storage.ts             what is wiped from the browser when the account changes
+  useEndpoints.ts        the signed-in user's attached endpoints
 ```
+
+The server computes every number on the report (`/readiness`); the browser only displays them.

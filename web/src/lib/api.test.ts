@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch, apiJson, getToken, setToken } from "./api";
+import { ApiError, apiFetch, apiJson, getToken, SIGNED_OUT_EVENT, setToken } from "./api";
 
 function mockFetch(status: number, body: unknown) {
   const fn = vi.fn(async () => new Response(JSON.stringify(body), { status }));
@@ -52,6 +52,16 @@ describe("apiFetch", () => {
     expect(getToken()).toBe("stale"); // a failed login must not sign you out
     await apiFetch("/endpoints");
     expect(getToken()).toBeNull();
+  });
+
+  it("announces the sign-out so the UI can follow", async () => {
+    setToken("stale");
+    mockFetch(401, {});
+    const heard = vi.fn();
+    window.addEventListener(SIGNED_OUT_EVENT, heard);
+    await apiFetch("/endpoints");
+    window.removeEventListener(SIGNED_OUT_EVENT, heard);
+    expect(heard).toHaveBeenCalledOnce();
   });
 });
 

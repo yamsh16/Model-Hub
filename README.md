@@ -212,7 +212,7 @@ the end date, and don't pull work forward.
 **Phase 4 — frontend migration (Days 22–24)**
 
 - [x] Day 22 (Oct 31): Next.js + Tailwind scaffold
-- [ ] Day 23 (Nov 1): migrate landing, connect, and report pages
+- [x] Day 23 (Nov 1): migrate landing, connect, and report pages
 - [ ] Day 24 (Nov 2): migrate chat and charts; retire the static frontend
 
 **Phase 5 — model file upload and hardening (Days 25–30)**
