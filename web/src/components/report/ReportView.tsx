@@ -8,6 +8,7 @@ import { estimateCard, progressCard } from "@/lib/report";
 import type { Readiness } from "@/lib/types";
 import { useWorkspace } from "../WorkspaceProvider";
 import { buttonClass, Container, DataTable, Panel } from "../ui";
+import LossChart from "./LossChart";
 
 const SAMPLE_ADVICE = [
   "Attach a model and run a test set to get real advice here.",
@@ -140,8 +141,10 @@ export default function ReportView() {
         )}
 
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
-          <Panel title="Training estimate">
-            {readiness?.estimate ? (
+          <div className="flex flex-col gap-5">
+            <LossChart log={log} />
+            <Panel title="Training estimate">
+              {readiness?.estimate ? (
               <details>
                 <summary className="cursor-pointer font-semibold">Assumptions behind the training estimate</summary>
                 <ul className="mt-2 list-disc pl-5 text-sm">
@@ -152,10 +155,11 @@ export default function ReportView() {
                   ))}
                 </ul>
               </details>
-            ) : (
-              <p className="text-sm text-muted">Load a training log on the connect page to see the estimate and its assumptions.</p>
-            )}
-          </Panel>
+              ) : (
+                <p className="text-sm text-muted">Load a training log on the connect page to see the estimate and its assumptions.</p>
+              )}
+            </Panel>
+          </div>
           <Panel title="What to do next">
             <ul className="list-disc pl-5">
               {advice.map((text, i) => (

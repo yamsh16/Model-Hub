@@ -11,8 +11,7 @@ what this project leans on.
 
 ## Current state
 
-The MVP loop works end to end in the browser (plain HTML/CSS/JS,
-[design mockup](frontend/index.html)): attach an OpenAI-compatible endpoint, upload a test-set
+The MVP loop works end to end in the browser (a Next.js + Tailwind app in [web/](web/README.md)): attach an OpenAI-compatible endpoint, upload a test-set
 CSV and pick the target column, run it through the endpoint to get real accuracy / F1 /
 per-class scores / a confusion matrix, and chat with the model (streamed, with history kept per
 endpoint). Training logs (CSV, or an MLflow run) draw a real loss curve, and the "training still
@@ -21,21 +20,17 @@ needed" card shows an estimate with a range and its assumptions. The readiness s
 log); the score says how many signals it is built from and shows its breakdown.
 
 ```bash
-cd frontend
-python -m http.server 8000
+cd web
+npm install
+npm run dev
 ```
 
-Then open http://localhost:8000. (The new Next.js app in `web/` is being built to replace this
-static site; run it with `cd web && npm install && npm run dev` and open http://localhost:3000.
-Until Day 24 the static site is the working app.) The backend (below) must be running on port 8001 for the
-attach form to work.
+Then open http://localhost:3000. The backend (below) must be running on port 8001. (The earlier
+plain HTML/CSS/JS version, built from the design mockup, was retired on Day 24; it is in the git
+history before that commit.)
 
 ```
-frontend/
-  index.html   page structure
-  styles.css   all styling (colours and fonts are set at the top)
-  main.js      endpoint form, test set + evaluation, loss chart + log import, streaming chat
-web/               Next.js + Tailwind app replacing the static site (see web/README.md)
+web/               Next.js + Tailwind app: pages /, /connect, /report, /chat (see web/README.md)
 backend/
   main.py          FastAPI app (GET /health)
   endpoints.py     register / list / get / delete API endpoints (POST /endpoints probes the URL)
@@ -62,7 +57,7 @@ docker compose up -d --wait             # PostgreSQL on 127.0.0.1:5432 (needs Do
 cd backend
 pip install -r requirements.txt
 python -m alembic upgrade head          # create/upgrade the tables
-uvicorn main:app --reload --port 8001   # :8000 is taken by the frontend
+uvicorn main:app --reload --port 8001   # the web app runs on :3000
 pytest                                  # schema tests also run on Postgres when it is up
 TEST_ON_POSTGRES=1 pytest               # the whole suite on real Postgres (slower, ~2 min)
 ```
@@ -87,7 +82,7 @@ the models and migrations disagree.
 ## MVP walkthrough
 
 1. Start the database and backend (see "Run the backend"; `uvicorn main:app --port 8001`; add `ALLOW_PRIVATE_ENDPOINTS=1` to
-   attach a model on localhost, e.g. Ollama) and the frontend (`python -m http.server 8000`).
+   attach a model on localhost, e.g. Ollama) and the web app (`cd web && npm run dev`, then open http://localhost:3000).
 2. **Sign in:** create an account (top right); everything below is private to it.
    **Attach:** name, OpenAI-compatible chat URL, model, optional key → it is probed and listed.
 3. **Test set:** upload a CSV, pick the target column (needs 2–50 distinct values), optionally
@@ -95,15 +90,15 @@ the models and migrations disagree.
 4. **Evaluate:** choose the endpoint, press Evaluate → the report fills with real metrics.
    Up to 200 rows are scored (a fixed random sample above that). Replies naming no single class
    count as wrong. ROC-AUC shows n/a because chat endpoints return labels, not probabilities.
-5. **Chat:** pick the model in the chat card; replies stream in and history survives a reload.
+5. **Chat:** open the Chat page and pick the model; replies stream in and history survives a reload.
 6. **Training log:** upload a log CSV or import an MLflow run → the loss curve is drawn from it,
    the "training still needed" card shows an estimate with a range, and the assumptions behind it.
 7. **Readiness:** the score and the advice list update after each step. Without an evaluation
    there is no score; with only some signals, the verdict says "based on N of 5".
 
-Known limits: after a page reload the test set and training log you were working on are not
-re-listed (they are saved, but the page only keeps the attached models and chat history);
-evaluation runs inside the request; Weights & Biases is supported through its CSV export
+Known limits: the test set, evaluation and training log you were working on survive a page
+reload but only within the same browser tab (they are kept in sessionStorage, and emptied when
+you sign out or switch account); evaluation runs inside the request; Weights & Biases is supported through its CSV export
 (Run → Export), not a direct API import.
 
 ## Target stack
@@ -213,7 +208,7 @@ the end date, and don't pull work forward.
 
 - [x] Day 22 (Oct 31): Next.js + Tailwind scaffold
 - [x] Day 23 (Nov 1): migrate landing, connect, and report pages
-- [ ] Day 24 (Nov 2): migrate chat and charts; retire the static frontend
+- [x] Day 24 (Nov 2): migrate chat and charts; retire the static frontend
 
 **Phase 5 — model file upload and hardening (Days 25–30)**
 

@@ -1,6 +1,6 @@
 # Model Hub web app (Next.js)
 
-The new front end, replacing the static site in `../frontend` over Days 22-24 of the roadmap.
+The new front end, built over Days 22-24 of the roadmap to replace the original static HTML/JS site (retired on Day 24).
 Next.js (App Router) + TypeScript + Tailwind CSS. Colours and fonts live in
 `src/app/globals.css` (`@theme`), carried over from the static site's `styles.css`.
 
@@ -26,7 +26,8 @@ Next.js here is a recent major version with changes from older releases: check
 |------------|------------|
 | `/`        | Landing: the pitch, "how it works", backend status |
 | `/connect` | Inputs: attach an endpoint, upload a test set + pick the target + leakage check + evaluate, load a training log |
-| `/report`  | Readiness score, accuracy, training progress / still needed, evaluation tables, advice |
+| `/report`  | Readiness score, accuracy, training progress / still needed, loss curve, evaluation tables, advice |
+| `/chat`    | Streamed chat with an attached model; history kept per model in the browser |
 
 Pages are server-rendered shells; the parts that talk to the backend are client components.
 
@@ -40,11 +41,14 @@ src/components/
   WorkspaceProvider.tsx  the test set, evaluation and training log the user has loaded (context,
                          kept in sessionStorage so a reload keeps it; emptied when the account changes)
   connect/               the three input panels on /connect
-  report/                the /report view
+  report/                the /report view and its LossChart (inline SVG)
+  chat/                  the /chat view
   ui.tsx                 Button, Field, Status, Card, Panel, DataTable
 src/lib/
   api.ts                 backend URL, bearer-token storage, apiFetch / apiJson
   types.ts               shapes of the backend's JSON
+  chart.ts               loss-chart geometry (log -> SVG coordinates)
+  sse.ts                 reads the chat's server-sent-events stream
   report.ts              wording for the "training still needed" and "progress" cards
   format.ts              pct / fmt / errorMessage
   storage.ts             what is wiped from the browser when the account changes

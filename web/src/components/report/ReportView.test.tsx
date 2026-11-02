@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AuthProvider from "../AuthProvider";
 import WorkspaceProvider from "../WorkspaceProvider";
@@ -28,7 +28,10 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("ReportView", () => {
   it("shows a sample report when nothing is loaded, without calling the backend", () => {

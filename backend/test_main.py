@@ -16,7 +16,7 @@ def test_health():
 
 @pytest.mark.parametrize(
     "origin",
-    ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:3000", "http://127.0.0.1:3000"],
+    ["http://localhost:3000", "http://127.0.0.1:3000"],
 )
 def test_cors_allows_frontend_origins(origin):
     r = client.get("/health", headers={"Origin": origin})
