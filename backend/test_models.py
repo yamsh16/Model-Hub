@@ -90,7 +90,8 @@ def test_model_constraints(s):
     must_fail(s, m.Model(user_id=u.id, name="n", kind="bogus", url="u", model_name="x"))
     must_fail(s, m.Model(user_id=u.id, name="n", kind="endpoint", url=None, model_name="x"))
     must_fail(s, m.Model(user_id=uuid.uuid4(), name="n", kind="endpoint", url="u", model_name="x"))
-    s.add(m.Model(user_id=u.id, name="uploaded", kind="upload"))  # uploads need no URL
+    s.add(m.Model(user_id=u.id, name="uploaded", kind="upload", file_format="gguf", file_size=1,
+                  file_sha256="a" * 64, scan={}))  # uploads need no URL, but must carry a scan report
     s.commit()
 
 
@@ -177,3 +178,16 @@ def test_owner_checks_stop_cross_user_links(s):
     s.add(a_sess)
     s.commit()
     must_fail(s, m.ChatMessage(user_id=b.id, session_id=a_sess.id, position=0, role="user", content="x"))
+
+
+def test_upload_rows_need_a_scan_report_and_a_data_only_format(s):
+    u = user(s)
+    complete = dict(user_id=u.id, name="w", kind="upload", file_format="safetensors", file_size=10,
+                    file_sha256="a" * 64, scan={"tensor_count": 1})
+    must_fail(s, m.Model(**{**complete, "scan": None}))
+    must_fail(s, m.Model(**{**complete, "file_sha256": None}))
+    must_fail(s, m.Model(**{**complete, "file_size": None}))
+    must_fail(s, m.Model(**{**complete, "file_format": None}))
+    must_fail(s, m.Model(**{**complete, "file_format": "pickle"}))  # code-bearing formats can't be stored
+    s.add(m.Model(**complete))
+    s.commit()

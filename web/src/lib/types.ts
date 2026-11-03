@@ -77,3 +77,18 @@ export type Readiness = {
 };
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
+
+export type Weights = {
+  id: string;
+  name: string;
+  filename: string;
+  format: "safetensors" | "gguf";
+  size_bytes: number;
+  sha256: string;
+  tensor_count: number;
+  parameter_count: number;
+  dtypes: Record<string, number>;
+  architecture: string | null;
+  metadata: Record<string, string>;
+  warnings: string[];
+};

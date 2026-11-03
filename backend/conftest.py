@@ -87,3 +87,9 @@ def database(request):
     yield engine
     app.dependency_overrides.clear()
     cleanup()
+
+
+@pytest.fixture(autouse=True)
+def upload_dir(tmp_path, monkeypatch):
+    """Every test gets its own empty upload folder, so tests never touch real uploads."""
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))

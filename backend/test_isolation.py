@@ -2,6 +2,7 @@
 
 These tests use real sign-ins (two users, real tokens), not the shortcut in conftest.
 """
+import re
 import uuid
 
 import jwt
@@ -74,7 +75,7 @@ def test_every_route_requires_sign_in_except_the_public_ones():
         for method in route.methods - {"HEAD", "OPTIONS"}:
             if (method, route.path) in OPEN_ROUTES:
                 continue
-            path = route.path.replace("{endpoint_id}", "x").replace("{testset_id}", "x").replace("{log_id}", "x")
+            path = re.sub(r"\{[^}]+\}", "x", route.path)  # whatever the path parameter is called
             r = client.request(method, path)
             assert r.status_code == 401, f"{method} {route.path} answered {r.status_code} without a token"
             checked += 1
@@ -185,3 +186,54 @@ def test_a_token_cannot_be_edited_to_become_another_user(alice, bob):
     # about the signature and not some other defect in the forged token.
     genuine = jwt.encode({**claims, "sub": bob_id}, auth._secret, algorithm="HS256")
     assert client.get("/auth/me", headers={"Authorization": f"Bearer {genuine}"}).json()["email"] == "bob@example.com"
+
+
+# ---------- uploaded weights ----------
+
+def upload_weights(headers, name="w"):
+    from weights_fixtures import safetensors_bytes
+
+    return client.post(
+        "/weights", params={"name": name, "filename": "m.safetensors"}, content=safetensors_bytes(),
+        headers={**headers, "Content-Type": "application/octet-stream"},
+    )
+
+
+def test_bob_cannot_see_or_delete_alices_uploaded_weights(alice, bob):
+    from pathlib import Path
+
+    import config
+
+    wid = upload_weights(alice).json()["id"]
+    assert client.get("/weights", headers=bob).json() == []
+    assert client.get(f"/weights/{wid}", headers=bob).status_code == 404
+    assert client.delete(f"/weights/{wid}", headers=bob).status_code == 404
+    # Alice's file and record survive Bob's attempts, and are only on disk under her folder.
+    assert client.get(f"/weights/{wid}", headers=alice).status_code == 200
+    stored = [p for p in Path(config.upload_dir()).rglob("*.safetensors")]
+    assert len(stored) == 1 and stored[0].stem == wid
+    alice_id = client.get("/auth/me", headers=alice).json()["id"]
+    assert stored[0].parent.name == alice_id
+
+
+def test_upload_quota_is_per_user(alice, bob, monkeypatch):
+    from weights_fixtures import safetensors_bytes
+
+    import config
+
+    size = len(safetensors_bytes())
+    monkeypatch.setenv("MAX_USER_UPLOAD_GB", str(size * 1.5 / config.GIB))
+    assert upload_weights(alice).status_code == 201
+    assert upload_weights(alice).status_code == 413  # Alice is full...
+    assert upload_weights(bob).status_code == 201  # ...Bob is unaffected
+
+
+def test_deleting_an_account_leaves_files_that_the_database_no_longer_knows(alice, database):
+    """Documents a known limit: rows cascade, files do not (yet). The files are unreachable
+    through the API, because every lookup is by an id that no longer exists."""
+    wid = upload_weights(alice).json()["id"]
+    with Session(database) as s:
+        s.delete(s.scalar(select(models.User)))
+        s.commit()
+        assert s.scalar(select(models.Model)) is None
+    assert client.get(f"/weights/{wid}", headers=alice).status_code == 401

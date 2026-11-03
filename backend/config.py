@@ -40,3 +40,19 @@ def jwt_secret() -> str:
 
 def encryption_key() -> str:
     return get_secret("ENCRYPTION_KEY", lambda: Fernet.generate_key().decode())
+
+
+GIB = 1024**3
+
+
+def upload_dir() -> Path:
+    """Where uploaded weight files are stored (git-ignored by default). Set UPLOAD_DIR in production."""
+    return Path(os.environ.get("UPLOAD_DIR") or Path(__file__).parent / ".uploads")
+
+
+def max_upload_bytes() -> int:
+    return int(float(os.environ.get("MAX_UPLOAD_GB", "2")) * GIB)
+
+
+def max_user_upload_bytes() -> int:
+    return int(float(os.environ.get("MAX_USER_UPLOAD_GB", "10")) * GIB)

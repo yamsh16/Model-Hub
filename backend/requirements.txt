@@ -11,3 +11,7 @@ psycopg[binary]>=3.2
 argon2-cffi>=23.1
 PyJWT>=2.8
 cryptography>=42
+# test-only: reference libraries used to prove the scanner accepts genuine files
+safetensors>=0.4
+gguf>=0.10
+numpy>=1.26

@@ -12,6 +12,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    BigInteger,
     ForeignKeyConstraint,
     Index,
     Integer,
@@ -27,7 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from db import Base
 
 # JSONB on PostgreSQL (compact, indexable); plain JSON elsewhere (SQLite in tests).
-JsonType = JSON().with_variant(JSONB(), "postgresql")
+JsonType = JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
 
 
 def _user_fk() -> Mapped[uuid.UUID]:
@@ -63,6 +64,15 @@ class Model(Base):
             "kind <> 'endpoint' OR (url IS NOT NULL AND model_name IS NOT NULL)",
             name="ck_models_endpoint_fields",
         ),
+        # An uploaded model must have passed the scanner, and only data-only formats exist here.
+        CheckConstraint(
+            "file_format IS NULL OR file_format IN ('safetensors', 'gguf')", name="ck_models_file_format"
+        ),
+        CheckConstraint(
+            "kind <> 'upload' OR (file_format IS NOT NULL AND file_size IS NOT NULL "
+            "AND file_sha256 IS NOT NULL AND scan IS NOT NULL)",
+            name="ck_models_upload_fields",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -75,6 +85,12 @@ class Model(Base):
     # writes this column when the routers move onto the database.
     api_key_encrypted: Mapped[str | None] = mapped_column(Text)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
+    # Uploaded weights (kind = 'upload'). The file lives on disk at a path built from the user
+    # and model ids (see weights.py); `scan` is the scanner's report.
+    file_format: Mapped[str | None] = mapped_column(String(20))
+    file_size: Mapped[int | None] = mapped_column(BigInteger)
+    file_sha256: Mapped[str | None] = mapped_column(String(64))
+    scan: Mapped[dict | None] = mapped_column(JsonType)
     created_at: Mapped[datetime] = _created_at()
 
 

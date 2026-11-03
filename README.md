@@ -42,10 +42,12 @@ backend/
   estimate.py      "training still needed" from curve-fitting a loss series, with a range and stated assumptions (GET /logs/{id}/estimate)
   readiness.py     0-100 readiness score + prioritised "what to do next" (GET /readiness?testset_id=&log_id=)
   config.py, secretbox.py, ownership.py   secrets/keys, API-key encryption, the one "does this row belong to the user" check
+  scan.py, weights.py   structural scanner for safetensors / GGUF files; upload, list, delete (POST /weights)
   auth.py          register / login / me, argon2 password hashes, JWT bearer tokens, login throttle (POST /auth/*)
   db.py            database URL + SQLAlchemy base (DATABASE_URL, defaults to the docker-compose Postgres)
   models.py        schema: users, models, test_sets, training_logs, reports, chat_sessions, chat_messages
   migrations/      Alembic migrations (alembic.ini points at them)
+  weights_fixtures.py   builders for (deliberately broken) weight files used by the tests
   test_*.py        pytest tests
   requirements.txt Python dependencies
 ```
@@ -71,7 +73,7 @@ keys survive restarts; **in production set both as environment variables** and k
 encryption key safe: lose it and stored keys can't be read (those models must be re-attached).
 Tokens last 12 hours. Five failed logins for one email from one address lock that pair out for
 15 minutes (in memory, per process; behind a proxy the "address" is the proxy's).
-Endpoints, test sets and training logs now live in PostgreSQL. Saved chat history is still
+Endpoints, test sets, training logs and uploaded-model records now live in PostgreSQL. Saved chat history is still
 kept in the browser (cleared on sign-out); the `chat_*` and `reports` tables are not used yet.
 Use `127.0.0.1`, not `localhost`, in `DATABASE_URL` on
 Windows: `localhost` tries IPv6 first and each connection waits ~8 s before falling back.
@@ -100,6 +102,32 @@ Known limits: the test set, evaluation and training log you were working on surv
 reload but only within the same browser tab (they are kept in sessionStorage, and emptied when
 you sign out or switch account); evaluation runs inside the request; Weights & Biases is supported through its CSV export
 (Run → Export), not a direct API import.
+
+## Uploaded model weights
+
+`POST /weights?name=...&filename=...` takes the file as the raw request body (streamed to disk,
+never held in memory) and accepts **only `.safetensors` and `.gguf`**. Configure with
+`UPLOAD_DIR` (default `backend/.uploads`, git-ignored), `MAX_UPLOAD_GB` (default 2) and
+`MAX_USER_UPLOAD_GB` (default 10). The size is checked from `Content-Length` before any of the
+body is read, and again while it streams.
+
+What the scan ([scan.py](backend/scan.py)) does: it never loads or executes the model. It reads
+only the header, with every length bounded by the file size, and rejects a file that is not what
+it claims to be: a pickle, ZIP (`.pt`) or HDF5 file renamed to look harmless is recognised by
+its first bytes; safetensors must have exact, gap-free tensor offsets, matching shapes and
+dtypes, and no duplicate keys; GGUF must have sane counts, aligned in-bounds tensors and no
+repeated keys. It is checked against files written by the real `safetensors` and `gguf`
+libraries, plus fuzzed corruption. Files are stored under `<UPLOAD_DIR>/<user id>/<model id>.<ext>`:
+the path is built from ids only, never from the uploaded file name.
+
+What it does **not** do: a file that passes is structurally valid, not proven harmless. It says
+nothing about whether the weights behave well, and a GGUF `chat_template` is a Jinja program
+that must only ever be rendered in a sandbox (the scan warns when one is present). Uploaded
+models are stored and described but **cannot be run yet**: sandboxed serving is Day 26.
+
+Known limits: one request per file (no chunked/resumable upload yet); deleting an *account*
+removes its database rows but not its files; two uploads started at the same moment can
+overshoot the per-user quota slightly.
 
 ## Target stack
 
@@ -212,7 +240,7 @@ the end date, and don't pull work forward.
 
 **Phase 5 — model file upload and hardening (Days 25–30)**
 
-- [ ] Day 25 (Nov 3): weight upload (`safetensors` / GGUF only) with file scanning
+- [x] Day 25 (Nov 3): weight upload (`safetensors` / GGUF only) with file scanning
 - [ ] Day 26 (Nov 4): sandboxed serving — container, no network, resource limits
 - [ ] Day 27 (Nov 5): reject or sandbox `.pkl` / `.pt`; security tests
 - [ ] Day 28 (Nov 6): Docker Compose for the whole stack; end-to-end tests

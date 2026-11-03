@@ -6,6 +6,7 @@ import { Card } from "../ui";
 import EndpointPanel from "./EndpointPanel";
 import LogPanel from "./LogPanel";
 import TestSetPanel from "./TestSetPanel";
+import WeightsPanel from "./WeightsPanel";
 
 /** The three inputs the report is built from: a model endpoint, a test set, a training log. */
 export default function ConnectView() {
@@ -28,6 +29,9 @@ export default function ConnectView() {
         </Card>
         <Card className="lg:col-span-2">
           <LogPanel />
+        </Card>
+        <Card className="lg:col-span-2">
+          <WeightsPanel />
         </Card>
       </div>
     </>

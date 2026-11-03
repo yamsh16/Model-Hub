@@ -26,3 +26,5 @@ Thumbs.db
 
 # Development secrets generated on first run (see backend/config.py)
 .dev-secrets/
+
+.uploads/
