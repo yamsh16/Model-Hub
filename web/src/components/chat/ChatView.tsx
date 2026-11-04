@@ -8,6 +8,7 @@ import { readSse } from "@/lib/sse";
 import { CHAT_KEY_PREFIX } from "@/lib/storage";
 import type { ChatMessage } from "@/lib/types";
 import { useEndpoints } from "@/lib/useEndpoints";
+import { useWeights } from "@/lib/useWeights";
 import { useAuth } from "../AuthProvider";
 import { Button, buttonClass, Card, Container, inputClass, Status, type StatusMessage } from "../ui";
 
@@ -30,9 +31,12 @@ function saveHistory(endpointId: string, history: ChatMessage[]) {
   }
 }
 
+type ChatTarget = { value: string; id: string; kind: "endpoint" | "local"; label: string };
+
 export default function ChatView() {
   const { user, ready } = useAuth();
   const { endpoints } = useEndpoints();
+  const { weights } = useWeights();
   const [chosen, setChosen] = useState("");
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState<string | null>(null); // the reply while it streams in
@@ -41,7 +45,16 @@ export default function ChatView() {
   const [busy, setBusy] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
 
-  const endpointId = endpoints.some((e) => e.id === chosen) ? chosen : (endpoints[0]?.id ?? "");
+  // Remote endpoints, plus uploaded GGUF models that are currently running in their sandbox.
+  const options: ChatTarget[] = [
+    ...endpoints.map((ep) => ({ value: `endpoint:${ep.id}`, id: ep.id, kind: "endpoint" as const, label: `${ep.name} (${ep.model})` })),
+    ...weights
+      .filter((w) => w.serve_state === "running")
+      .map((w) => ({ value: `local:${w.id}`, id: w.id, kind: "local" as const, label: `${w.name} (uploaded, ${w.architecture ?? w.format})` })),
+  ];
+  const target = options.find((o) => o.value === chosen) ?? options[0];
+  const endpointId = target?.id ?? "";
+  const idleLocal = weights.filter((w) => w.format === "gguf" && w.serve_state === "stopped").length;
 
   // Switching model (or loading the list) shows that model's saved conversation.
   useEffect(() => {
@@ -69,7 +82,7 @@ export default function ChatView() {
     setBusy(true);
 
     try {
-      const res = await apiFetch(`/endpoints/${endpointId}/chat`, {
+      const res = await apiFetch(`${target.kind === "local" ? "/weights" : "/endpoints"}/${endpointId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: asked, stream: true }),
@@ -104,7 +117,7 @@ export default function ChatView() {
     setStatus(null);
   }
 
-  const none = endpoints.length === 0;
+  const none = options.length === 0;
   const bubble = "max-w-[80%] whitespace-pre-wrap rounded-[10px] px-4 py-2.5";
 
   return (
@@ -129,14 +142,14 @@ export default function ChatView() {
           <div className="mb-3 flex gap-2.5">
             <select
               aria-label="Model to chat with"
-              value={endpointId}
+              value={target?.value ?? ""}
               onChange={(e) => setChosen(e.target.value)}
               disabled={none || busy}
               className={inputClass}
             >
-              {endpoints.map((ep) => (
-                <option key={ep.id} value={ep.id}>
-                  {ep.name} ({ep.model})
+              {options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </select>
@@ -156,6 +169,15 @@ export default function ChatView() {
           </div>
 
           <Status message={status} />
+          {idleLocal > 0 && (
+            <p className="mt-3 text-[0.85rem] text-muted">
+              {idleLocal} uploaded model{idleLocal === 1 ? " is" : "s are"} not running.{" "}
+              <Link href="/connect" className="font-semibold text-teal hover:underline">
+                Start {idleLocal === 1 ? "it" : "one"} on the Connect page
+              </Link>{" "}
+              to chat with {idleLocal === 1 ? "it" : "them"} here.
+            </p>
+          )}
           <form onSubmit={send} className="mt-3.5 flex gap-2.5">
             <input
               type="text"

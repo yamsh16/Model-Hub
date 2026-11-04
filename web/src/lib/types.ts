@@ -67,6 +67,16 @@ export type Estimate = {
   warnings: string[];
 };
 
+export type ServeStatus = {
+  state: "stopped" | "starting" | "running";
+  chat_template: string | null;
+  memory: string;
+  cpus: number;
+  context: number;
+  idle_stop_seconds: number;
+  templates: string[];
+};
+
 export type Readiness = {
   score: number | null;
   verdict: string;
@@ -91,4 +101,5 @@ export type Weights = {
   architecture: string | null;
   metadata: Record<string, string>;
   warnings: string[];
+  serve_state: "stopped" | "starting" | "running" | "unsupported";
 };

@@ -93,3 +93,11 @@ def database(request):
 def upload_dir(tmp_path, monkeypatch):
     """Every test gets its own empty upload folder, so tests never touch real uploads."""
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+
+
+@pytest.fixture(autouse=True)
+def no_real_docker(monkeypatch):
+    """A Docker binary that does not exist: any test that forgets to fake the sandbox gets
+    'Docker is not installed' instead of touching real containers. The tests that do want
+    Docker (test_sandbox_docker.py) set DOCKER_BIN back themselves."""
+    monkeypatch.setenv("DOCKER_BIN", "docker-is-disabled-in-tests")

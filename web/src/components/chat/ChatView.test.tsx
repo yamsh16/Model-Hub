@@ -7,6 +7,8 @@ import ChatView from "./ChatView";
 
 const endpoint = { id: "e1", name: "my-llm", url: "https://x/v1/chat/completions", model: "gpt-x", latency_ms: 40 };
 
+let localModels: unknown[] = [];
+
 function sse(...events: string[]): Response {
   const enc = new TextEncoder();
   return new Response(
@@ -30,6 +32,8 @@ function mockBackend(chat: () => Response) {
       if (path === "/auth/me") return Response.json({ id: "u1", email: "a@b.co" });
       if (path === "/endpoints") return Response.json([endpoint]);
       if (path === "/endpoints/e1/chat") return chat();
+      if (path === "/weights") return Response.json(localModels);
+      if (path === "/weights/w1/chat") return chat();
       return new Response("{}", { status: 404 });
     }),
   );
@@ -52,6 +56,7 @@ async function ask(text: string) {
 }
 
 beforeEach(() => {
+  localModels = [];
   localStorage.clear();
   setToken("tok");
 });
@@ -92,5 +97,36 @@ describe("ChatView", () => {
     mockBackend(() => sse("[DONE]"));
     renderChat();
     expect(await screen.findByText("earlier question")).toBeTruthy();
+  });
+});
+
+const local = (state: string) => ({
+  id: "w1", name: "tiny-llama", format: "gguf", architecture: "llama", serve_state: state,
+});
+
+describe("ChatView with uploaded models", () => {
+  it("offers a running uploaded model and chats through its own route", async () => {
+    localModels = [local("running")];
+    const calls = mockBackend(() => sse('{"delta":"local hi"}', "[DONE]"));
+    renderChat();
+    const select = (await screen.findByLabelText("Model to chat with")) as HTMLSelectElement;
+    await waitFor(() => expect([...select.options].map((o) => o.textContent)).toContain("tiny-llama (uploaded, llama)"));
+
+    fireEvent.change(select, { target: { value: "local:w1" } });
+    await ask("Hi there");
+    expect(await screen.findByText("local hi")).toBeTruthy();
+    expect(calls.some((c) => c.path === "/weights/w1/chat")).toBe(true);
+    expect(calls.some((c) => c.path === "/endpoints/e1/chat")).toBe(false);
+    expect(localStorage.getItem(CHAT_KEY_PREFIX + "w1")).toContain("local hi"); // its own history
+  });
+
+  it("does not list a stopped uploaded model, and points to where to start it", async () => {
+    localModels = [local("stopped")];
+    mockBackend(() => sse("[DONE]"));
+    renderChat();
+    const select = (await screen.findByLabelText("Model to chat with")) as HTMLSelectElement;
+    expect(await screen.findByText(/1 uploaded model is not running/)).toBeTruthy();
+    expect([...select.options].map((o) => o.textContent)).not.toContain("tiny-llama (uploaded, llama)");
+    expect(screen.getByRole("link", { name: /Start it on the Connect page/ }).getAttribute("href")).toBe("/connect");
   });
 });

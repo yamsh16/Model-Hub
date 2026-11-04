@@ -237,3 +237,61 @@ def test_deleting_an_account_leaves_files_that_the_database_no_longer_knows(alic
         s.commit()
         assert s.scalar(select(models.Model)) is None
     assert client.get(f"/weights/{wid}", headers=alice).status_code == 401
+
+
+# ---------- running uploaded models ----------
+
+@pytest.fixture
+def sandbox_fake(monkeypatch):
+    import sandbox
+    import serving
+
+    calls = {"start": [], "stop": [], "chat": []}
+    monkeypatch.setattr(sandbox, "start", lambda name, path, limits, template, labels: calls["start"].append(name))
+    monkeypatch.setattr(sandbox, "stop", lambda name: calls["stop"].append(name))
+    monkeypatch.setattr(sandbox, "is_running", lambda name: True)
+    monkeypatch.setattr(sandbox, "chat_once", lambda name, payload: calls["chat"].append(name) or "hi")
+    serving.manager.__init__()
+    yield calls
+    serving.manager.__init__()
+
+
+def gguf_upload(headers):
+    from weights_fixtures import gguf_bytes
+
+    r = client.post(
+        "/weights", params={"name": "g", "filename": "g.gguf"}, content=gguf_bytes(),
+        headers={**headers, "Content-Type": "application/octet-stream"},
+    )
+    assert r.status_code == 201
+    return r.json()["id"]
+
+
+def test_bob_cannot_start_stop_inspect_or_chat_with_alices_running_model(alice, bob, sandbox_fake):
+    wid = gguf_upload(alice)
+    assert client.post(f"/weights/{wid}/serve", headers=alice).status_code == 200
+
+    msg = {"messages": [{"role": "user", "content": "hi"}]}
+    assert client.get(f"/weights/{wid}/serve", headers=bob).status_code == 404
+    assert client.post(f"/weights/{wid}/serve", headers=bob).status_code == 404
+    assert client.delete(f"/weights/{wid}/serve", headers=bob).status_code == 404
+    assert client.post(f"/weights/{wid}/chat", json=msg, headers=bob).status_code == 404
+
+    # Bob's attempts changed nothing: still one start, no stop, no chat on Alice's container.
+    assert len(sandbox_fake["start"]) == 1 and sandbox_fake["stop"] == [] and sandbox_fake["chat"] == []
+    assert client.get(f"/weights/{wid}/serve", headers=alice).json()["state"] == "running"
+    assert client.post(f"/weights/{wid}/chat", json=msg, headers=alice).json() == {"reply": "hi"}
+
+
+def test_the_running_model_limit_is_per_user_so_one_user_cannot_block_another(alice, bob, sandbox_fake):
+    a, b = gguf_upload(alice), gguf_upload(bob)
+    assert client.post(f"/weights/{a}/serve", headers=alice).status_code == 200
+    assert client.post(f"/weights/{b}/serve", headers=bob).status_code == 200  # Bob is not blocked by Alice
+
+
+def test_serving_routes_refuse_unknown_and_malformed_ids(alice, sandbox_fake):
+    for bad in ("nope", "1 OR 1=1", str(uuid.uuid4())):
+        assert client.get(f"/weights/{bad}/serve", headers=alice).status_code == 404
+        assert client.post(f"/weights/{bad}/serve", headers=alice).status_code == 404
+        assert client.delete(f"/weights/{bad}/serve", headers=alice).status_code == 404
+    assert sandbox_fake["start"] == []

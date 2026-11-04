@@ -43,6 +43,7 @@ backend/
   readiness.py     0-100 readiness score + prioritised "what to do next" (GET /readiness?testset_id=&log_id=)
   config.py, secretbox.py, ownership.py   secrets/keys, API-key encryption, the one "does this row belong to the user" check
   scan.py, weights.py   structural scanner for safetensors / GGUF files; upload, list, delete (POST /weights)
+  sandbox.py, serving.py, storage.py   run an uploaded GGUF model in a locked-down container (POST /weights/{id}/serve, /chat)
   auth.py          register / login / me, argon2 password hashes, JWT bearer tokens, login throttle (POST /auth/*)
   db.py            database URL + SQLAlchemy base (DATABASE_URL, defaults to the docker-compose Postgres)
   models.py        schema: users, models, test_sets, training_logs, reports, chat_sessions, chat_messages
@@ -123,11 +124,60 @@ the path is built from ids only, never from the uploaded file name.
 What it does **not** do: a file that passes is structurally valid, not proven harmless. It says
 nothing about whether the weights behave well, and a GGUF `chat_template` is a Jinja program
 that must only ever be rendered in a sandbox (the scan warns when one is present). Uploaded
-models are stored and described but **cannot be run yet**: sandboxed serving is Day 26.
+models can then be run in a sandbox (next section).
 
 Known limits: one request per file (no chunked/resumable upload yet); deleting an *account*
 removes its database rows but not its files; two uploads started at the same moment can
 overshoot the per-user quota slightly.
+
+## Running uploaded models (sandbox)
+
+`POST /weights/{id}/serve` starts a GGUF model in its own Docker container (llama.cpp's
+`llama-server`); `POST /weights/{id}/chat` talks to it (plain or streamed, same event format as
+endpoint chat); `DELETE /weights/{id}/serve` stops it. The Connect page has Start / Stop, and a
+running model appears in the Chat page's model list. Safetensors files are stored but **not
+served yet** (that needs a heavy Python/GPU runtime that doesn't fit this sandbox).
+
+The model file is untrusted input to a C++ parser, so the container is there to contain a bug
+in that parser. Every container is created with ([sandbox.py](backend/sandbox.py)):
+
+| Protection | How |
+|---|---|
+| No network at all | `--network none`. There is no port to publish; the backend talks to the server by running `curl` *inside* the container with `docker exec`, the prompt going in on stdin |
+| Nothing writable | read-only root filesystem; a 64 MB `noexec` tmpfs; the weights mounted read-only |
+| No privileges | runs as `nobody`, all capabilities dropped, `no-new-privileges` |
+| Bounded resources | memory (swap disabled), CPUs, process count, log size |
+| No Jinja | this build of `llama-server` runs a model's *embedded* chat template through a Jinja engine by default; we pass `--no-jinja` and a fixed built-in template chosen from an allow-list (the "Chat format" menu) |
+| No web UI | `--no-webui` |
+| Pinned code | the image is referenced by digest and is never pulled implicitly (`--pull never`) |
+
+Operating limits: one running model per user and two overall by default; at most two
+simultaneous chats per model (more get `429`); the generation length is capped by the server
+(`SERVE_MAX_TOKENS`), not by the caller; a request that runs too long is killed; a model nobody
+uses for 10 minutes is stopped. Containers are labelled, and on every start the backend removes
+any left over from a crash. Deleting an uploaded model stops its container first.
+
+Setup: install Docker, then `docker pull` the image named by `LLAMA_IMAGE`
+(default `ghcr.io/ggml-org/llama.cpp@sha256:10a38e6c...`, see `backend/config.py`; update the pin
+deliberately). Settings: `SERVE_MEMORY` (2g), `SERVE_CPUS` (2), `SERVE_CONTEXT` (2048),
+`SERVE_MAX_TOKENS` (512), `SERVE_IDLE_SECONDS` (600), `SERVE_MAX_RUNNING` (2),
+`SERVE_MAX_PER_USER` (1), `SERVE_START_TIMEOUT` / `SERVE_REQUEST_TIMEOUT` (120 s), `DOCKER_BIN`.
+
+Tests: the container flags, Docker failure handling, lifecycle, limits and isolation run
+everywhere with Docker faked. The real thing (Docker really applies the flags, the model
+really answers, the container really cannot reach the internet or write to its filesystem) runs
+when you opt in:
+
+```bash
+TINY_GGUF=/path/to/stories260K.gguf pytest test_sandbox_docker.py   # a 1 MB test model from llama.cpp
+```
+
+Known limits: the backend needs access to the Docker socket, which is root-equivalent on the
+host, so it must be trusted and the machine dedicated; for deployment the container control
+should move into a small separate service (Day 29). A sandbox contains a parser bug, it does not
+make a malicious model's *output* trustworthy. Scoring uploaded models with a test set is not
+wired up yet (the chat route is). Running containers belong to one backend process, so run a
+single worker.
 
 ## Target stack
 
@@ -241,7 +291,7 @@ the end date, and don't pull work forward.
 **Phase 5 — model file upload and hardening (Days 25–30)**
 
 - [x] Day 25 (Nov 3): weight upload (`safetensors` / GGUF only) with file scanning
-- [ ] Day 26 (Nov 4): sandboxed serving — container, no network, resource limits
+- [x] Day 26 (Nov 4): sandboxed serving — container, no network, resource limits
 - [ ] Day 27 (Nov 5): reject or sandbox `.pkl` / `.pt`; security tests
 - [ ] Day 28 (Nov 6): Docker Compose for the whole stack; end-to-end tests
 - [ ] Day 29 (Nov 7): deployment

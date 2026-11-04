@@ -56,3 +56,54 @@ def max_upload_bytes() -> int:
 
 def max_user_upload_bytes() -> int:
     return int(float(os.environ.get("MAX_USER_UPLOAD_GB", "10")) * GIB)
+
+
+# ---- sandboxed serving of uploaded models (see sandbox.py) ----
+
+# Pinned by digest so the code that runs untrusted models is the code that was reviewed. Update it
+# deliberately: `docker pull <image>` then copy the new digest. Override with LLAMA_IMAGE.
+DEFAULT_LLAMA_IMAGE = "ghcr.io/ggml-org/llama.cpp@sha256:10a38e6cc91760ab157f0a0a8546218d35f4a314432a70298abfa3d096829ad7"
+
+
+def serve_image() -> str:
+    return os.environ.get("LLAMA_IMAGE") or DEFAULT_LLAMA_IMAGE
+
+
+def docker_bin() -> str:
+    return os.environ.get("DOCKER_BIN") or "docker"
+
+
+def serve_memory() -> str:
+    return os.environ.get("SERVE_MEMORY") or "2g"
+
+
+def serve_cpus() -> float:
+    return float(os.environ.get("SERVE_CPUS") or 2)
+
+
+def serve_context() -> int:
+    return int(os.environ.get("SERVE_CONTEXT") or 2048)
+
+
+def serve_max_tokens() -> int:
+    return int(os.environ.get("SERVE_MAX_TOKENS") or 512)
+
+
+def serve_idle_seconds() -> int:
+    return int(os.environ.get("SERVE_IDLE_SECONDS") or 600)
+
+
+def serve_max_running() -> int:
+    return int(os.environ.get("SERVE_MAX_RUNNING") or 2)
+
+
+def serve_max_per_user() -> int:
+    return int(os.environ.get("SERVE_MAX_PER_USER") or 1)
+
+
+def serve_start_timeout() -> float:
+    return float(os.environ.get("SERVE_START_TIMEOUT") or 120)
+
+
+def serve_request_timeout() -> float:
+    return float(os.environ.get("SERVE_REQUEST_TIMEOUT") or 120)

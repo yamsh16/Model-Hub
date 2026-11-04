@@ -20,10 +20,12 @@ from sqlalchemy.orm import Session
 
 import config
 import scan
+import serving
 from auth import current_user
 from db import get_db
 from models import Model, User
 from ownership import owned
+from storage import temp_dir as _temp_dir, weights_path
 from testsets import safe_filename
 
 router = APIRouter(prefix="/weights", tags=["weights"], dependencies=[Depends(current_user)])
@@ -45,16 +47,7 @@ class WeightOut(BaseModel):
     architecture: str | None
     metadata: dict[str, str]
     warnings: list[str]
-
-
-def weights_path(user_id: uuid.UUID, model_id: uuid.UUID, fmt: str) -> Path:
-    """Where a user's file lives. Built only from ids and a fixed extension, never from anything
-    the user typed, so an upload can't choose its own path."""
-    return config.upload_dir() / str(user_id) / f"{model_id}.{fmt}"
-
-
-def _temp_dir() -> Path:
-    return config.upload_dir() / "tmp"
+    serve_state: str  # "stopped" | "starting" | "running", or "unsupported" (not a GGUF file)
 
 
 def cleanup_stale_temp() -> int:
@@ -71,14 +64,31 @@ def cleanup_stale_temp() -> int:
     return removed
 
 
+def _serve_state(row: Model) -> str:
+    if row.file_format != "gguf":
+        return "unsupported"
+    entry = serving.manager.get(row.id)
+    return entry.state if entry else "stopped"
+
+
 def _out(row: Model) -> WeightOut:
     s = row.scan
     return WeightOut(
         id=str(row.id), name=row.name, filename=s.get("original_filename", ""), format=row.file_format,
         size_bytes=row.file_size, sha256=row.file_sha256, tensor_count=s["tensor_count"],
         parameter_count=s["parameter_count"], dtypes=s["dtypes"], architecture=s.get("architecture"),
-        metadata=s.get("metadata", {}), warnings=s.get("warnings", []),
+        metadata=s.get("metadata", {}), warnings=s.get("warnings", []), serve_state=_serve_state(row),
     )
+
+
+def _make_readable_by_sandbox(path: Path) -> None:
+    """The model runs as an unprivileged user inside its container, so the file and its folder
+    must be world-readable (never writable). A restrictive umask would otherwise block it."""
+    try:
+        os.chmod(path, 0o644)
+        os.chmod(path.parent, 0o755)
+    except OSError:
+        pass  # filesystems without POSIX permissions (e.g. some Windows mounts)
 
 
 def _unlink(path: Path) -> None:
@@ -142,6 +152,7 @@ async def upload_weights(
 
         final.parent.mkdir(parents=True, exist_ok=True)
         os.replace(temp, final)
+        _make_readable_by_sandbox(final)
         report = asdict(result) | {"original_filename": filename}
         row = Model(
             id=model_id, user_id=user.id, name=name, kind="upload", file_format=fmt,
@@ -176,6 +187,7 @@ def read_weights(weights_id: str, user: User = Depends(current_user), db: Sessio
 def delete_weights(weights_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     row = owned(db, Model, weights_id, user, "Uploaded model", Model.kind == "upload")
     path = weights_path(user.id, row.id, row.file_format)
+    serving.stop_model(row.id)  # never leave a container running on a file that is about to go
     db.delete(row)
     db.commit()
     _unlink(path)  # after the commit: a failed delete must not leave a row pointing at no file

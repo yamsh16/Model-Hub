@@ -18,14 +18,31 @@ const weights: Weights = {
   architecture: "llama",
   metadata: {},
   warnings: ["Contains a chat template (a Jinja program). It must only ever be rendered in a sandbox."],
+  serve_state: "stopped",
 };
+
+const serveStopped = {
+  state: "stopped",
+  chat_template: null,
+  memory: "2g",
+  cpus: 2,
+  context: 2048,
+  idle_stop_seconds: 600,
+  templates: ["chatml", "llama3"],
+};
+const serveRunning = { ...serveStopped, state: "running", chat_template: "llama3" };
+
+let serveReply: () => Response;
 
 let list: Weights[];
 let calls: { path: string; method: string }[];
+let servePosts: { chat_template: string }[];
 
 beforeEach(() => {
   list = [weights];
   calls = [];
+  servePosts = [];
+  serveReply = () => Response.json(serveRunning);
   localStorage.clear();
   vi.stubGlobal(
     "fetch",
@@ -35,6 +52,12 @@ beforeEach(() => {
       calls.push({ path, method });
       if (path === "/auth/me") return Response.json({ id: "u1", email: "a@b.co" });
       if (path === "/weights" && method === "GET") return Response.json(list);
+      if (path === "/weights/w1/serve" && method === "GET") return Response.json(serveStopped);
+      if (path === "/weights/w1/serve" && method === "POST") {
+        servePosts.push(JSON.parse(init!.body as string));
+        return serveReply();
+      }
+      if (path === "/weights/w1/serve" && method === "DELETE") return new Response(null, { status: 204 });
       if (path === "/weights/w1" && method === "DELETE") {
         list = [];
         return new Response(null, { status: 204 });
@@ -97,5 +120,49 @@ describe("WeightsPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Upload" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/Sign in first/);
     expect(screen.queryByText("tiny-llama")).toBeNull(); // a signed-out visitor sees no models
+  });
+});
+
+describe("WeightsPanel: running a GGUF model", () => {
+  it("starts the model with the chosen chat format and then offers chat and stop", async () => {
+    setToken("tok");
+    renderPanel();
+    await screen.findByText("Not running");
+    fireEvent.change(screen.getByLabelText("Chat format for tiny-llama"), { target: { value: "llama3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    expect(await screen.findByText("Running · llama3")).toBeTruthy();
+    expect(servePosts).toEqual([{ chat_template: "llama3" }]);
+    expect(screen.getByRole("link", { name: "Open chat" }).getAttribute("href")).toBe("/chat");
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(calls).toContainEqual({ path: "/weights/w1/serve", method: "DELETE" }));
+  });
+
+  it("explains that it runs isolated and that the file's own template is ignored", async () => {
+    setToken("tok");
+    renderPanel();
+    const note = await screen.findByText(/Runs isolated: no network, 2g memory, 2 CPUs/);
+    expect(note.textContent).toContain("Stops by itself after 10 min");
+    expect(note.textContent).toContain("template inside the file is ignored");
+  });
+
+  it("shows why starting failed", async () => {
+    setToken("tok");
+    serveReply = () => Response.json({ detail: "Docker is not running on the server" }, { status: 503 });
+    renderPanel();
+    await screen.findByText("Not running");
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Docker is not running");
+    expect(screen.getByRole("button", { name: "Start" })).toBeTruthy(); // can try again
+  });
+
+  it("does not offer to run safetensors files", async () => {
+    setToken("tok");
+    list = [{ ...weights, id: "w2", format: "safetensors", name: "st", serve_state: "unsupported" }];
+    renderPanel();
+    await screen.findByText("st");
+    expect(screen.getByText(/Running safetensors models is not supported yet/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Start" })).toBeNull();
   });
 });
