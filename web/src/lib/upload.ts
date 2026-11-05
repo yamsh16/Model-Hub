@@ -8,9 +8,10 @@ export const WEIGHT_EXTENSIONS = [".safetensors", ".gguf"];
  * minutes of transfer. The server repeats this and scans the file's contents: it is the authority.
  */
 export function checkWeightsFile(file: { name: string; size: number }, maxBytes?: number): string | null {
-  const name = file.name.toLowerCase();
+  // Windows ignores trailing dots and spaces, so the server judges "m.pt." as "m.pt"; do the same.
+  const name = file.name.trim().replace(/[ .]+$/, "").toLowerCase();
   if (!WEIGHT_EXTENSIONS.some((ext) => name.endsWith(ext))) {
-    return "Only .safetensors and .gguf files are accepted. Pickle-based formats (.pt, .pkl, .bin) can run code when loaded.";
+    return "Only .safetensors and .gguf files are accepted. Pickle-based formats (.pt, .pkl, .bin) can run code when loaded, so convert the file to safetensors on your own machine first.";
   }
   if (file.size === 0) return "That file is empty.";
   if (maxBytes && file.size > maxBytes) return "That file is larger than the upload limit.";

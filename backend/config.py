@@ -107,3 +107,8 @@ def serve_start_timeout() -> float:
 
 def serve_request_timeout() -> float:
     return float(os.environ.get("SERVE_REQUEST_TIMEOUT") or 120)
+
+
+def production() -> bool:
+    """MODELHUB_ENV=production turns off developer conveniences (e.g. the interactive API docs)."""
+    return os.environ.get("MODELHUB_ENV", "").lower() == "production"

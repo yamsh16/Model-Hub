@@ -66,7 +66,8 @@ export default function WeightsPanel() {
         <span className="font-mono">.safetensors</span> and <span className="font-mono">.gguf</span> only — formats that hold data, not code.
         Every file is checked on the server before it is kept. A GGUF model can then be started in an isolated
         sandbox (no network, capped memory and CPU) and chatted with from the Chat page. Safetensors files are
-        stored but cannot be run yet.
+        stored but cannot be run yet. Pickle-based files (.pt, .pkl, .bin and similar) are refused outright because
+        they can run code when loaded: convert them to safetensors on your own machine first.
       </p>
       <form onSubmit={submit}>
         <Field label="Weights file" htmlFor="w-file">

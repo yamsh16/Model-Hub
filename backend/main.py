@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import config
 import serving
 from auth import router as auth_router
 from chat import router as chat_router
@@ -13,6 +14,7 @@ from evaluation import router as evaluation_router
 from logs import router as logs_router
 from metrics import router as metrics_router
 from readiness import router as readiness_router
+from security import SecurityHeadersMiddleware
 from testsets import router as testsets_router
 from weights import cleanup_stale_temp, router as weights_router
 
@@ -29,7 +31,13 @@ async def lifespan(_: FastAPI):
         serving.shutdown_all()
 
 
-app = FastAPI(title="Model Hub API", version="0.1.0", lifespan=lifespan)
+# The interactive API docs are a development convenience; production does not publish them.
+_docs = None if config.production() else "/docs"
+app = FastAPI(
+    title="Model Hub API", version="0.1.0", lifespan=lifespan,
+    docs_url=_docs, redoc_url=None if config.production() else "/redoc",
+    openapi_url=None if config.production() else "/openapi.json",
+)
 app.include_router(auth_router)
 app.include_router(endpoints_router)
 app.include_router(chat_router)
@@ -52,6 +60,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SecurityHeadersMiddleware)  # added last, so it wraps everything else
 
 
 @app.get("/health")

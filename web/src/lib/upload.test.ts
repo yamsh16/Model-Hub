@@ -55,9 +55,15 @@ describe("checkWeightsFile", () => {
   });
 
   it("rejects code-bearing and unknown formats with an explanation", () => {
-    for (const name of ["m.pt", "m.pkl", "m.bin", "m.ckpt", "m.onnx", "m", "m.safetensors.zip"]) {
+    for (const name of ["m.pt", "m.pkl", "m.bin", "m.ckpt", "m.onnx", "m", "m.safetensors.zip", "m.pt.", "M.PT"]) {
       expect(checkWeightsFile({ name, size: 1 })).toMatch(/Only \.safetensors and \.gguf/);
     }
+    expect(checkWeightsFile({ name: "m.pt", size: 1 })).toMatch(/convert the file to safetensors/);
+  });
+
+  it("judges a name the way the server does: trailing dots and spaces are ignored", () => {
+    expect(checkWeightsFile({ name: "m.safetensors.", size: 1 })).toBeNull();
+    expect(checkWeightsFile({ name: "m.pt ", size: 1 })).not.toBeNull();
   });
 
   it("rejects empty and oversized files", () => {

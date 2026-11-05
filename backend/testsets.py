@@ -1,5 +1,6 @@
 import csv
 import io
+import unicodedata
 from collections import Counter
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
@@ -92,7 +93,10 @@ async def read_upload(file: UploadFile) -> tuple[str, list[str], list[tuple[str,
 
 def safe_filename(name: str | None, default: str) -> str:
     """The base name of an uploaded file, shortened to fit the database column."""
-    base = (name or "").replace("\\", "/").rsplit("/", 1)[-1].replace("\x00", "").strip()
+    base = (name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    # Drop control and invisible formatting characters (NUL, bidi overrides such as U+202E that
+    # make "evil\u202egguf.exe" display as "evilexe.fug", zero-width characters ...).
+    base = "".join(ch for ch in base if unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp")).strip()
     return (base or default)[:MAX_NAME_CHARS]
 
 

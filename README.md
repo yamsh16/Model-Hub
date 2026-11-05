@@ -43,6 +43,7 @@ backend/
   readiness.py     0-100 readiness score + prioritised "what to do next" (GET /readiness?testset_id=&log_id=)
   config.py, secretbox.py, ownership.py   secrets/keys, API-key encryption, the one "does this row belong to the user" check
   scan.py, weights.py   structural scanner for safetensors / GGUF files; upload, list, delete (POST /weights)
+  security.py      protective response headers (nosniff, no-store, CSP, ...); docs are off with MODELHUB_ENV=production
   sandbox.py, serving.py, storage.py   run an uploaded GGUF model in a locked-down container (POST /weights/{id}/serve, /chat)
   auth.py          register / login / me, argon2 password hashes, JWT bearer tokens, login throttle (POST /auth/*)
   db.py            database URL + SQLAlchemy base (DATABASE_URL, defaults to the docker-compose Postgres)
@@ -126,6 +127,19 @@ nothing about whether the weights behave well, and a GGUF `chat_template` is a J
 that must only ever be rendered in a sandbox (the scan warns when one is present). Uploaded
 models can then be run in a sandbox (next section).
 
+**Pickle-based files are refused, not sandboxed.** `.pkl`, `.pt`, `.pth`, `.bin`, `.ckpt`,
+`.joblib`, `.h5`/`.keras`, `.npy`/`.npz`, `.onnx`, archives and programs all get a specific
+refusal that says what the file is and how to convert it (load it on *your own* machine, e.g.
+`torch.load(path, weights_only=True)`, then `safetensors.torch.save_file`). Sandboxing was the
+alternative, but a sandbox only limits the damage from code the attacker already got to run,
+while a refusal costs the user one conversion. Two independent gates apply: the file name
+(judged the way Windows would: case-insensitive, trailing dots and spaces ignored, last
+extension decides) and the content, which is what really decides, because a name proves
+nothing. A file is accepted only if it parses as well-formed safetensors/GGUF, which no pickle,
+ZIP or archive can; recognising "this looks like a pickle" only chooses the error message. GGUF
+files may carry nothing after the last tensor except zero padding. Nothing in the codebase
+imports a deserialiser or evaluates code (a test reads every source file and fails if one does).
+
 Known limits: one request per file (no chunked/resumable upload yet); deleting an *account*
 removes its database rows but not its files; two uploads started at the same moment can
 overshoot the per-user quota slightly.
@@ -178,6 +192,31 @@ should move into a small separate service (Day 29). A sandbox contains a parser 
 make a malicious model's *output* trustworthy. Scoring uploaded models with a test set is not
 wired up yet (the chat route is). Running containers belong to one backend process, so run a
 single worker.
+
+## Security tests
+
+`pytest test_security.py` ([test_security.py](backend/test_security.py)) is the safety net for
+uploads and the API surface. Its centrepiece is a *real* payload, a pickle that writes a marker
+file if anything unpickles it; a control test proves it works, and every other test proves it
+was never run.
+
+| Risk | Control | Tested by |
+|---|---|---|
+| A pickle uploaded as `.pkl` / `.pt` / `.bin` / `.joblib` / ... | refused by extension, with the reason and how to convert | every payload (pickle protocols 0-5, torch-style zip, gzip, tar, numpy object array) under 20+ refused names, including case, trailing-dot and double-extension tricks |
+| The same pickle renamed `.safetensors` / `.gguf` | refused by content: it does not parse as the format | the same payloads under good names; the scanner is also run on them directly |
+| Code run by the scanner or anywhere else | nothing deserialises or evaluates; `pickletools` is used only to *disassemble* | AST test over every source file; a self-test of that checker; marker file never appears |
+| A real model rejected by mistake | acceptance is decided by structure, never by a signature guess | regression for a real Day 25 bug (safetensors headers of 640/896/1152/1408 bytes start like a pickle and were refused); every header length 64-8192 |
+| A payload hidden in a valid file | GGUF: only zero padding after the last tensor; safetensors: no trailing bytes | payloads appended to GGUF; files from the real `gguf` library still pass |
+| Filename tricks (path traversal, NUL, bidi/zero-width characters, `?` `#` `%2e`) | files are stored as `<user id>/<model id>.<ext>`; display names are stripped of control and invisible characters | 18 names through the API |
+| A decompression bomb | archives are never unpacked | a 50 MB-of-zeros zip is refused in well under a second |
+| Scanner denial of service | every length is bounded by the file size | 100k-tensor safetensors, 50k-entry GGUF, absurd claims, pathological pickle-like input: all bounded in time |
+| Browser-side attacks on API replies | `nosniff`, `no-store`, `no-referrer`, `DENY`, a `default-src 'none'` CSP | headers on success and error replies; a header a route sets itself (SSE `no-cache`) is kept |
+| The API docs exposing the surface | off when `MODELHUB_ENV=production` | checked in a fresh process |
+| Secrets committed | `.dev-secrets/`, `.uploads/`, `.env` are git-ignored | read from `.gitignore` |
+
+Earlier days' controls are tested where they were built: the container flags and the real-Docker
+suite (`test_sandbox*.py`), the isolation tests (`test_isolation.py`, including a sweep that fails
+if any route lacks authentication), and the scanner tests with fuzzed corruption (`test_scan.py`).
 
 ## Target stack
 
@@ -292,7 +331,7 @@ the end date, and don't pull work forward.
 
 - [x] Day 25 (Nov 3): weight upload (`safetensors` / GGUF only) with file scanning
 - [x] Day 26 (Nov 4): sandboxed serving — container, no network, resource limits
-- [ ] Day 27 (Nov 5): reject or sandbox `.pkl` / `.pt`; security tests
+- [x] Day 27 (Nov 5): reject or sandbox `.pkl` / `.pt`; security tests
 - [ ] Day 28 (Nov 6): Docker Compose for the whole stack; end-to-end tests
 - [ ] Day 29 (Nov 7): deployment
 - [ ] Day 30 (Nov 8): final polish, docs, release

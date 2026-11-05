@@ -7,13 +7,21 @@ still not "safe to run" (see the warnings, and the sandboxed serving that comes 
 that fails is rejected with the reason.
 
 Why these formats: safetensors and GGUF are data-only by design. Pickle-based formats
-(.pkl/.pt/.pth/.bin/.ckpt/.joblib) run code when loaded, so they are never accepted; a
-renamed one is recognised by its first bytes.
+(.pkl/.pt/.pth/.bin/.ckpt/.joblib) run code when loaded, so they are REFUSED, not sandboxed:
+a sandbox contains damage but still executes the attacker's code, whereas refusing costs the
+user one conversion step done on their own machine (the message says how). Nothing in this
+codebase ever unpickles anything (a test enforces that).
+
+Two independent gates stop a pickle: its file extension, and its content. The content gate is
+the real one, because a name proves nothing: a file is only accepted if it parses as a
+well-formed safetensors/GGUF file, which no pickle, ZIP or archive can. The "this looks like a
+pickle" recognition below only chooses a helpful error message; it is never what lets a file in.
 """
 from __future__ import annotations
 
 import json
 import os
+import pickletools
 import struct
 from dataclasses import dataclass, field
 from typing import BinaryIO
@@ -36,28 +44,104 @@ class ScanResult:
     warnings: list[str] = field(default_factory=list)
 
 
+_CONVERT = (
+    "Convert it on your own machine instead: load it there (for PyTorch, "
+    "torch.load(path, weights_only=True)), save the tensors with safetensors.torch.save_file, "
+    "and upload the .safetensors file."
+)
+_PICKLE = ("a pickle file, which runs arbitrary code when it is loaded", _CONVERT)
+_TORCH = ("a PyTorch checkpoint, which is a pickle and runs arbitrary code when it is loaded", _CONVERT)
+_KERAS = ("a Keras/HDF5 model, which can embed code that runs when it is loaded",
+          "Export just the weights as safetensors on your own machine and upload that.")
+_NUMPY = ("a NumPy file, which can contain pickled objects that run code when loaded",
+          "Save the arrays with safetensors.numpy.save_file and upload that.")
+_ONNX = ("an ONNX model, which is not supported yet (ONNX files can point at other files on the server)",
+         "Upload the weights as safetensors or GGUF instead.")
+_ARCHIVE = ("an archive; archives are never unpacked here", "Upload the .safetensors or .gguf file itself.")
+_PROGRAM = ("a program or script, not model weights", "Upload the .safetensors or .gguf file itself.")
+
+# extension -> (what it is, what to do). Everything not listed here is refused too; this table
+# only makes the message specific.
+REFUSED_EXTENSIONS: dict[str, tuple[str, str]] = {
+    **{e: _PICKLE for e in (".pkl", ".pickle", ".joblib", ".dill", ".sav", ".cloudpickle")},
+    **{e: _TORCH for e in (".pt", ".pth", ".ckpt", ".bin", ".pt2", ".pte", ".mar")},
+    **{e: _KERAS for e in (".h5", ".hdf5", ".hdf", ".keras")},
+    **{e: _NUMPY for e in (".npy", ".npz")},
+    ".onnx": _ONNX,
+    **{e: _ARCHIVE for e in (".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar")},
+    **{e: _PROGRAM for e in (".exe", ".dll", ".so", ".dylib", ".sh", ".bat", ".cmd", ".ps1", ".py", ".js", ".jar")},
+}
+
+
+def _extension(filename: str) -> str:
+    # Windows ignores trailing dots and spaces, so "m.pt." is "m.pt"; judge the name the same way.
+    return os.path.splitext(filename.strip().rstrip(" .").lower())[1]
+
+
 def format_for_filename(filename: str) -> str:
-    ext = os.path.splitext(filename.lower())[1]
-    if ext not in ALLOWED_EXTENSIONS:
-        raise ScanError(
-            f"Only .safetensors and .gguf files are accepted (got '{ext or 'no extension'}'). "
-            "Pickle-based formats such as .pt, .pkl and .bin can run code when loaded."
-        )
-    return ALLOWED_EXTENSIONS[ext]
+    ext = _extension(filename)
+    if ext in ALLOWED_EXTENSIONS:
+        return ALLOWED_EXTENSIONS[ext]
+    if ext in REFUSED_EXTENSIONS:
+        what, fix = REFUSED_EXTENSIONS[ext]
+        raise ScanError(f"'{ext}' files are not accepted: this is {what}. {fix} Only .safetensors and .gguf are accepted.")
+    raise ScanError(
+        f"Only .safetensors and .gguf files are accepted (got '{ext or 'no extension'}'). "
+        "Pickle-based formats such as .pt, .pkl and .bin can run code when loaded."
+    )
 
 
 # ---------------------------------------------------------------- recognising unsafe files
 
-def sniff_unsafe(head: bytes) -> str | None:
-    """Name the dangerous format a file really is, judged by its first bytes, or None."""
-    if head[:4] in (b"PK\x03\x04", b"PK\x05\x06"):
-        return "a ZIP archive (PyTorch .pt/.pth files are zips containing pickled code)"
+_PICKLE_OPS = {"GLOBAL", "STACK_GLOBAL", "INST", "OBJ", "NEWOBJ", "NEWOBJ_EX", "REDUCE", "BUILD", "STOP"}
+# Opcodes a text/old-protocol pickle can start with. Requiring one of these keeps ordinary text
+# (which disassembles into a few meaningless opcodes) from being called a pickle.
+_PICKLE_STARTS = {
+    "MARK", "GLOBAL", "INST", "STRING", "INT", "NONE", "UNICODE", "LONG", "FLOAT", "EMPTY_LIST",
+    "EMPTY_DICT", "EMPTY_TUPLE", "BINUNICODE", "BININT", "BININT1", "BININT2", "SHORT_BINSTRING",
+    "BINSTRING", "NEWTRUE", "NEWFALSE",
+}
+
+
+def _looks_like_pickle(head: bytes) -> bool:
+    """Would `head` begin a pickle? Binary pickles announce themselves (0x80 + protocol 2-5).
+    Older text-protocol pickles do not, so disassemble them: pickletools.genops only reads the
+    opcodes, it never executes them."""
     if len(head) >= 2 and head[0] == 0x80 and 2 <= head[1] <= 5:
+        return True
+    first = True
+    try:
+        for op, _arg, _pos in pickletools.genops(head):
+            if first and op.name not in _PICKLE_STARTS:
+                return False
+            first = False
+            if op.name in _PICKLE_OPS:
+                return True
+    except Exception:  # an invalid opcode, or cut off mid-argument: not a pickle
+        return False
+    return False
+
+
+def sniff_unsafe(head: bytes) -> str | None:
+    """Name the dangerous or unsupported format a file really is, judged by its first bytes
+    (pass up to ~64 KB). Used only to explain a rejection, never to admit a file: some real
+    safetensors headers happen to start with bytes that look like these signatures."""
+    if head[:4] in (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"):
+        return "a ZIP archive (PyTorch .pt/.pth files are zips containing pickled code)"
+    if _looks_like_pickle(head):
         return "a Python pickle, which runs code when loaded"
     if head[:8] == b"\x89HDF\r\n\x1a\n":
         return "an HDF5 file (Keras .h5 models can embed code)"
-    if head[:2] in (b"\x1f\x8b",):
+    if head[:6] == b"\x93NUMPY":
+        return "a NumPy file (can contain pickled objects that run code when loaded)"
+    if head[:2] == b"\x1f\x8b":
         return "a gzip archive"
+    if head[:3] == b"BZh" or head[:6] == b"\xfd7zXZ\x00" or head[:6] == b"7z\xbc\xaf\x27\x1c" or head[:5] == b"Rar!\x1a":
+        return "a compressed archive"
+    if head[257:262] == b"ustar":
+        return "a tar archive"
+    if head[:4] == b"\x7fELF":
+        return "an executable program"
     return None
 
 
@@ -337,6 +421,25 @@ def _scan_gguf(f: BinaryIO, size: int) -> ScanResult:
         result.dtypes[type_name] = result.dtypes.get(type_name, 0) + 1
         result.parameter_count += elements
     result.tensor_count = len(tensors)
+
+    # Nothing may follow the last tensor except alignment padding, and the padding must be zeros.
+    # A longer or non-zero tail is a payload riding along (e.g. a file that is also a pickle or
+    # ZIP), which no GGUF loader would ever read. Only checked when every tensor's size is known.
+    if all(ggml_type in _GGML_TYPES for _, _, ggml_type, _ in tensors):
+        end = 0
+        for _name, dims, ggml_type, offset in tensors:
+            elements = 1
+            for d in dims:
+                elements *= d
+            _t, block, block_bytes = _GGML_TYPES[ggml_type]
+            end = max(end, offset + elements // block * block_bytes)
+        padded = (end + alignment - 1) // alignment * alignment
+        if data_size > padded:
+            raise ScanError("GGUF has extra bytes after the last tensor")
+        if data_size > end:  # inside the padding: it may only be zeros
+            f.seek(data_start + end)
+            if any(f.read(data_size - end)):
+                raise ScanError("GGUF has extra bytes after the last tensor")
     return result
 
 
@@ -351,17 +454,26 @@ def scan_file(path: str, fmt: str) -> ScanResult:
     if size == 0:
         raise ScanError("The file is empty")
     with open(path, "rb") as f:
-        head = f.read(16)
-        unsafe = sniff_unsafe(head)
-        if unsafe:
-            raise ScanError(f"Rejected: this file is {unsafe}. Only safetensors and GGUF are accepted.")
+        head = f.read(65536)
         f.seek(0)
-        if fmt == "gguf" and head[:4] != b"GGUF":
-            hint = " (it looks like safetensors; rename it to .safetensors)" if _looks_like_safetensors(head, size) else ""
-            raise ScanError(f"The content is not GGUF{hint}")
-        if fmt == "safetensors" and head[:4] == b"GGUF":
-            raise ScanError("The content is GGUF, not safetensors (rename it to .gguf)")
-        return _SCANNERS[fmt](f, size)
+        try:
+            if fmt == "gguf" and head[:4] != b"GGUF":
+                hint = " (it looks like safetensors; rename it to .safetensors)" if _looks_like_safetensors(head, size) else ""
+                raise ScanError(f"The content is not GGUF{hint}")
+            if fmt == "safetensors" and head[:4] == b"GGUF":
+                raise ScanError("The content is GGUF, not safetensors (rename it to .gguf)")
+            return _SCANNERS[fmt](f, size)
+        except ScanError as e:
+            # The structural scan decides; only now, to explain the refusal, ask what the file is.
+            unsafe = sniff_unsafe(head)
+            if unsafe:
+                raise ScanError(
+                    f"Rejected: this file is {unsafe}. Only safetensors and GGUF are accepted. {_CONVERT_SHORT}"
+                ) from None
+            raise e
+
+
+_CONVERT_SHORT = "Convert it to safetensors on your own machine and upload that."
 
 
 def _looks_like_safetensors(head: bytes, size: int) -> bool:
