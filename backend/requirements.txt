@@ -1,7 +1,6 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 httpx>=0.27
-pytest>=8.0
 python-multipart>=0.0.9
 scikit-learn>=1.5
 scipy>=1.11
@@ -11,7 +10,3 @@ psycopg[binary]>=3.2
 argon2-cffi>=23.1
 PyJWT>=2.8
 cryptography>=42
-# test-only: reference libraries used to prove the scanner accepts genuine files
-safetensors>=0.4
-gguf>=0.10
-numpy>=1.26

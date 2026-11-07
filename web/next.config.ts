@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: "standalone", // a self-contained server for the Docker image (web/Dockerfile)
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

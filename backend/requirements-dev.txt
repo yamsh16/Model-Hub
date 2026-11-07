@@ -1,0 +1,6 @@
+-r requirements.txt
+pytest>=8.0
+# reference libraries used to prove the scanner accepts genuine files
+safetensors>=0.4
+gguf>=0.10
+numpy>=1.26

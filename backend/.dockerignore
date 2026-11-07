@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.dev-secrets/
+.uploads/
+test_*.py
+conftest.py
+weights_fixtures.py
+requirements-dev.txt

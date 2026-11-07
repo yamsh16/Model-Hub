@@ -1,0 +1,21 @@
+# Layered over ../docker-compose.yml by run.py: adds a stub model for the API to talk to and
+# allows private endpoint addresses (the stub lives on the Docker network). Never use this in
+# a real deployment.
+services:
+  stub-model:
+    image: python:3.12-slim
+    command: ["python", "/stub_model.py"]
+    volumes:
+      - ./e2e/stub_model.py:/stub_model.py:ro   # relative to the first compose file, not to this one
+    read_only: true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/', timeout=3)"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  api:
+    environment:
+      ALLOW_PRIVATE_ENDPOINTS: "1"
+    depends_on:
+      stub-model:
+        condition: service_healthy

@@ -50,13 +50,10 @@ app.include_router(readiness_router)
 app.include_router(weights_router)
 app.include_router(serving.router)
 
-# Allow the Next.js app (web/, :3000) to call the API in development.
+# Allow the Next.js app (web/, :3000 by default) to call the API; see CORS_ORIGINS.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=config.cors_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )

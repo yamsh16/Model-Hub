@@ -51,15 +51,17 @@ backend/
   migrations/      Alembic migrations (alembic.ini points at them)
   weights_fixtures.py   builders for (deliberately broken) weight files used by the tests
   test_*.py        pytest tests
-  requirements.txt Python dependencies
+  Dockerfile, requirements.txt, requirements-dev.txt   the API image; runtime vs. test dependencies
+e2e/               end-to-end tests of the whole Docker stack (run.py, test_stack.py, a stub model)
+docker-compose.yml the whole stack: PostgreSQL, API, web
 ```
 
 Run the backend:
 
 ```bash
-docker compose up -d --wait             # PostgreSQL on 127.0.0.1:5432 (needs Docker Desktop running)
+docker compose up -d --wait db          # only PostgreSQL, on 127.0.0.1:5432 (needs Docker Desktop running)
 cd backend
-pip install -r requirements.txt
+pip install -r requirements-dev.txt     # requirements.txt is the runtime subset the Docker image uses
 python -m alembic upgrade head          # create/upgrade the tables
 uvicorn main:app --reload --port 8001   # the web app runs on :3000
 pytest                                  # schema tests also run on Postgres when it is up
@@ -82,6 +84,66 @@ Windows: `localhost` tries IPv6 first and each connection waits ~8 s before fall
 After changing `models.py`: `python -m alembic revision --autogenerate -m "what changed"`,
 review the file, then `python -m alembic upgrade head`; `python -m alembic check` fails if
 the models and migrations disagree.
+
+## Run everything with Docker
+
+```bash
+docker compose up -d --build --wait     # PostgreSQL + API + web; the first build takes a few minutes
+```
+
+Then open http://localhost:3000 (the API is on http://localhost:8001). Nothing needs configuring:
+the API creates its database tables on start (`alembic upgrade head`), and generates its signing
+and encryption keys once, keeping them in a Docker volume so sign-ins and stored API keys survive
+restarts and rebuilds. `docker compose down` stops it and keeps your data; add `-v` to delete the
+database, uploads and keys too. Everything is published on `127.0.0.1` only.
+
+| Setting (shell or a `.env` file next to `docker-compose.yml`) | Default | Meaning |
+|---|---|---|
+| `WEB_PORT`, `API_PORT`, `DB_PORT` | 3000, 8001, 5432 | host ports |
+| `JWT_SECRET`, `ENCRYPTION_KEY` | generated, kept in the `secrets` volume | set them to manage the keys yourself |
+| `MODELHUB_ENV` | empty | `production` turns off the API docs pages |
+| `ALLOW_PRIVATE_ENDPOINTS` | empty | `1` lets you attach a model on a private address (e.g. Ollama on the host) |
+| `CORS_ORIGINS` | the web app's address | comma-separated browser origins allowed to call the API |
+| `NEXT_PUBLIC_API_BASE` | `http://localhost:<API_PORT>` | the API address the *browser* uses; baked in at **build** time, so rebuild after changing it |
+
+Both containers run as a non-root user with a read-only filesystem, all Linux capabilities dropped,
+and `no-new-privileges`; the API may write only to its two volumes (uploads, keys) and `/tmp`.
+
+**Running uploaded models does not work inside this stack.** Starting a model needs the API to
+control Docker, which means mounting the Docker socket into it, and that is root on your machine.
+It is deliberately not done: starting a model answers "Docker is not installed on the server" (HTTP 503)
+here. To run uploaded models, run the API on the host (`docker compose up -d --wait db`, then
+`uvicorn` as above). Day 29 moves container control into a small separate service.
+
+Changing a dependency: `web/package-lock.json` must install on Linux too, because the image runs
+`npm ci`. If it fails with "Missing: ... from lock file", regenerate the lock inside Linux:
+`docker run --rm -v "$PWD/web:/w" -w /w node:22-alpine npm install --package-lock-only --ignore-scripts`.
+
+## End-to-end tests
+
+```bash
+python e2e/run.py          # build, start, test, and remove the whole stack (about a minute)
+python e2e/run.py --keep   # leave it running afterwards;  -k journey  selects tests by name
+```
+
+Needs Docker and `pip install -r backend/requirements-dev.txt`. The run uses its own compose
+project and ports (web 13000, API 18001, database 15432), so it never touches your development
+stack or its data. A small stub model (`e2e/stub_model.py`, standard library only) stands in for a
+real LLM, so the expected accuracy is exact. [e2e/test_stack.py](e2e/test_stack.py) checks, over
+real HTTP against real containers and PostgreSQL:
+
+| Area | What is checked |
+|---|---|
+| Stack | every page is served; the web bundle was built with the API's address; migrations ran on an empty database; CORS allows the web app and nobody else; protective headers |
+| Journey | register, sign in, attach a model (key accepted, stored, never returned), upload a test set, evaluate (accuracy exactly 18/20), leakage, training log, estimate, readiness, chat plain and streamed |
+| Isolation | a second account gets `404` for every id of the first one's endpoint, test set, log and weights, and cannot use or change them |
+| Uploads | a genuine safetensors file is accepted and deleted; pickles and torch-style zips are refused under bad and good names and nothing is stored; starting a GGUF model without Docker access answers `503` and the API stays healthy |
+| Operations | the API container is replaced and sign-ins, stored API keys and uploads survive (only volumes and the database carry over); containers run non-root, read-only, without the Docker socket |
+
+The suite skips itself when no stack is running, so `pytest` in `backend/` is unaffected. What it
+does not cover: clicking through the pages in a real browser (the pages are checked to be served,
+and the UI logic by the 60 web unit tests), a real LLM, and real model serving, which needs the
+Docker access described above (that path has its own opt-in suite, `test_sandbox_docker.py`).
 
 ## MVP walkthrough
 
@@ -187,8 +249,9 @@ TINY_GGUF=/path/to/stories260K.gguf pytest test_sandbox_docker.py   # a 1 MB tes
 ```
 
 Known limits: the backend needs access to the Docker socket, which is root-equivalent on the
-host, so it must be trusted and the machine dedicated; for deployment the container control
-should move into a small separate service (Day 29). A sandbox contains a parser bug, it does not
+host, so it must be trusted and the machine dedicated (the Docker Compose stack therefore does
+not mount it, so serving is off there); for deployment the container control should move into a
+small separate service (Day 29). A sandbox contains a parser bug, it does not
 make a malicious model's *output* trustworthy. Scoring uploaded models with a test set is not
 wired up yet (the chat route is). Running containers belong to one backend process, so run a
 single worker.
@@ -332,7 +395,7 @@ the end date, and don't pull work forward.
 - [x] Day 25 (Nov 3): weight upload (`safetensors` / GGUF only) with file scanning
 - [x] Day 26 (Nov 4): sandboxed serving — container, no network, resource limits
 - [x] Day 27 (Nov 5): reject or sandbox `.pkl` / `.pt`; security tests
-- [ ] Day 28 (Nov 6): Docker Compose for the whole stack; end-to-end tests
+- [x] Day 28 (Nov 6): Docker Compose for the whole stack; end-to-end tests
 - [ ] Day 29 (Nov 7): deployment
 - [ ] Day 30 (Nov 8): final polish, docs, release
 

@@ -11,19 +11,25 @@ log = logging.getLogger("modelhub.config")
 DEV_SECRETS_DIR = Path(__file__).parent / ".dev-secrets"
 
 
-def get_secret(name: str, generate) -> str:
-    """Return the secret from env var `name`; otherwise a persisted dev-only value.
+def secrets_dir() -> Path:
+    """Where generated secrets live. The Docker stack points SECRETS_DIR at a volume."""
+    return Path(os.environ.get("SECRETS_DIR") or DEV_SECRETS_DIR)
 
-    The dev value is created on first use and stored under .dev-secrets/ so sign-ins and
-    stored API keys survive a restart. Never rely on that in production: set the variable.
+
+def get_secret(name: str, generate) -> str:
+    """Return the secret from env var `name`; otherwise a persisted generated value.
+
+    The value is created on first use and stored under .dev-secrets/ (or SECRETS_DIR) so
+    sign-ins and stored API keys survive a restart. Production should set the variable instead.
     """
     value = os.environ.get(name)
     if value:
         return value
-    path = DEV_SECRETS_DIR / name
+    directory = secrets_dir()
+    path = directory / name
     if path.exists():
         return path.read_text().strip()
-    DEV_SECRETS_DIR.mkdir(exist_ok=True)
+    directory.mkdir(parents=True, exist_ok=True)
     value = generate()
     path.write_text(value)
     try:
@@ -112,3 +118,12 @@ def serve_request_timeout() -> float:
 def production() -> bool:
     """MODELHUB_ENV=production turns off developer conveniences (e.g. the interactive API docs)."""
     return os.environ.get("MODELHUB_ENV", "").lower() == "production"
+
+
+DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
+
+
+def cors_origins() -> list[str]:
+    """Browser origins allowed to call the API (comma-separated CORS_ORIGINS; default: the dev web app)."""
+    raw = os.environ.get("CORS_ORIGINS") or DEFAULT_CORS_ORIGINS
+    return [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
