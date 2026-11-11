@@ -401,6 +401,53 @@ the end date, and don't pull work forward.
 
 Payments, teams, and report sharing are out of scope for the 30 days.
 
+### Planned change: synthetic sample data (not started)
+
+Today the app ships no test data: every user must bring their own model *and* their own test
+CSV. Idea (decided 2026-11-09): generate a synthetic classification test set so a new user can
+try the app straight away.
+
+- Backend: a deterministic generator (fixed random seed) behind an endpoint such as
+  `GET /testsets/sample`, staying inside the existing limits (5 MB, 50,000 rows, ≤ 50 classes).
+- Frontend: a "Use sample data" button in `TestSetPanel.tsx` that creates a normal `TestSet`
+  with the target column already set; also a download link for the CSV.
+- Optionally a matching training CSV (no overlap, so the leakage check passes) and a
+  deliberately leaky one (to show the warning).
+- Tests: deterministic output, class balance, and that it passes `parse_csv_text` / `set_target`.
+- **Open question:** row shape. Read `evaluation.py` first to see what is sent to the model.
+  Leaning towards a small text-classification set (`text`, `label`) since it works for both
+  chat-style endpoints and uploaded GGUF models.
+
+### Planned change: free hosted model for users without their own (not started)
+
+Today every chat model is supplied by the user (their own endpoint or an uploaded GGUF). Idea
+(decided 2026-11-09): let users without a model try the app using a free hosted one, e.g. Groq
+(free tier, OpenAI-compatible API, so the existing endpoint probe should work).
+
+- **Step 1 (do first):** a "Groq" preset in the attach form. It prefills the base URL and a
+  suggested model; the user pastes their own free Groq key, stored server-side like any other
+  endpoint key. Almost no new code, no cost to us, rate limits apply per user.
+- **Step 2 (maybe later):** a built-in shared demo model using our own key. Needs per-user
+  quotas, a key that never reaches the browser, abuse protection, and a check of the
+  provider's terms. It also turns the app into a model provider, so decide that deliberately.
+- **To verify before building:** Groq's current free-tier limits and model names (they change
+  often), and that the endpoint code works against Groq unchanged.
+
+### Planned change: a "How it works" guide for new users (not started)
+
+Problem (2026-11-09): the app feels confusing. There are four pages (home, connect, report,
+chat) and a first-time user is not told what order to do things in. The only guide today is the
+"MVP walkthrough" above, which is for developers, not users.
+
+- **Step 1 (do first):** a `/guide` page in the web app with the same 7 steps as the MVP
+  walkthrough, rewritten in plain language: attach a model → upload a test set → evaluate →
+  chat → training log → readiness. Link to it from the header and from the home page.
+- **Step 2:** a "Next step" hint on each page, e.g. connect shows which of model / test set
+  is still missing, and report says "Run an evaluation first" instead of an empty chart.
+- **Step 3 (later):** an interactive demo that runs on the planned sample data and the free
+  hosted model (see the two notes above), so a new user can click through a full run with
+  nothing of their own. This depends on those two changes.
+
 ## Research & prior art
 
 Nothing combines all four pieces of this product yet, but each piece has prior work worth
