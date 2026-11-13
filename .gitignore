@@ -28,3 +28,6 @@ Thumbs.db
 .dev-secrets/
 
 .uploads/
+
+# Local trained model (a pickle); regenerate with example-model/train.py
+*.joblib
